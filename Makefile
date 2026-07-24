@@ -10,7 +10,8 @@ build:
 	cargo build --release
 
 run: image
-	cargo run --release --bin cyberbox
+	cargo build --release -p cyberbox-desktop
+	./target/release/cyberbox-desktop
 
 ollama-pull:
 	ollama pull $(MODEL)

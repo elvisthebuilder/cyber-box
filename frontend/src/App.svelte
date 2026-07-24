@@ -4,14 +4,16 @@
   import Sidebar from "./lib/Sidebar.svelte";
   import TabBar from "./lib/TabBar.svelte";
   import TerminalView from "./lib/TerminalView.svelte";
+  import Editor from "./lib/Editor.svelte";
   import AiPanel from "./lib/AiPanel.svelte";
   import StatusBar from "./lib/StatusBar.svelte";
   import { api, b64encode, type Tab } from "./lib/api";
 
   const initialTabId: string = crypto.randomUUID();
-  let tabs = $state<Tab[]>([{ id: initialTabId, title: "bash" }]);
+  let tabs = $state<Tab[]>([{ id: initialTabId, title: "bash", kind: "terminal" }]);
   let activeId = $state<string>(initialTabId);
   let termRefs: Record<string, { getBufferText: (n?: number) => string }> = {};
+  let dirtyTabs = $state<Record<string, boolean>>({});
 
   let containerUp = $state(false);
   let torOn = $state(false);
@@ -20,7 +22,19 @@
 
   function newTab() {
     const id = crypto.randomUUID();
-    tabs = [...tabs, { id, title: "bash" }];
+    tabs = [...tabs, { id, title: "bash", kind: "terminal" }];
+    activeId = id;
+  }
+
+  function openFile(path: string) {
+    const existing = tabs.find((t) => t.kind === "editor" && t.path === path);
+    if (existing) {
+      activeId = existing.id;
+      return;
+    }
+    const id = crypto.randomUUID();
+    const title = path.split("/").pop() || path;
+    tabs = [...tabs, { id, title, kind: "editor", path }];
     activeId = id;
   }
 
@@ -29,6 +43,7 @@
     const idx = tabs.findIndex((t) => t.id === id);
     tabs = tabs.filter((t) => t.id !== id);
     delete termRefs[id];
+    delete dirtyTabs[id];
     if (activeId === id) {
       activeId = tabs[Math.max(0, idx - 1)].id;
     }
@@ -55,6 +70,10 @@
     }
   }
 
+  const displayTabs = $derived(
+    tabs.map((t) => (t.kind === "editor" && dirtyTabs[t.id] ? { ...t, title: `${t.title} ●` } : t)),
+  );
+
   onMount(() => {
     refreshStatus();
     const interval = setInterval(refreshStatus, 2000);
@@ -69,12 +88,21 @@
 <div class="shell">
   <TitleBar />
   <div class="body">
-    <Sidebar onInsertText={insertText} activeTabId={activeId} />
+    <Sidebar onInsertText={insertText} onOpenFile={openFile} activeTabId={activeId} />
     <div class="main">
-      <TabBar {tabs} {activeId} onSelect={(id) => (activeId = id)} onClose={closeTab} onNew={newTab} />
+      <TabBar tabs={displayTabs} {activeId} onSelect={(id) => (activeId = id)} onClose={closeTab} onNew={newTab} />
       <div class="term-stack">
         {#each tabs as tab (tab.id)}
-          <TerminalView id={tab.id} active={tab.id === activeId} bind:this={termRefs[tab.id]} />
+          {#if tab.kind === "editor" && tab.path}
+            <Editor
+              id={tab.id}
+              path={tab.path}
+              active={tab.id === activeId}
+              onDirtyChange={(dirty) => (dirtyTabs[tab.id] = dirty)}
+            />
+          {:else}
+            <TerminalView id={tab.id} active={tab.id === activeId} bind:this={termRefs[tab.id]} />
+          {/if}
         {/each}
       </div>
       <AiPanel open={aiOpen} enabled={aiEnabled} getContext={() => termRefs[activeId]?.getBufferText() ?? ""} />

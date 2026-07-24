@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-command bootstrap: build the toolbox image if missing, check Ollama is
-# reachable, then launch the TUI.
+# reachable, then launch the desktop app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -24,5 +24,10 @@ else
     echo "==> Warning: 'ollama' not found on PATH. Install it for the AI panel to work."
 fi
 
+echo "==> Building frontend..."
+npm --prefix frontend install --no-fund --no-audit >/dev/null
+npm --prefix frontend run build >/dev/null
+
 echo "==> Launching cyber-box..."
-cargo run --release --bin cyberbox
+cargo build --release -p cyberbox-desktop
+exec ./target/release/cyberbox-desktop

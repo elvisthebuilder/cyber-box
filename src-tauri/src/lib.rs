@@ -47,6 +47,8 @@ pub fn run() {
             commands::refresh_install_status,
             commands::install_tool,
             commands::list_dir,
+            commands::read_file,
+            commands::write_file,
             commands::pty_open,
             commands::pty_write,
             commands::pty_resize,

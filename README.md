@@ -1,29 +1,37 @@
 # cyber-box
 
-A terminal UI pentest workstation. The TUI runs on your host terminal but
-every actual tool — nmap, sqlmap, Metasploit, hydra, tshark, Tor, everything
-— executes inside a single sandboxed Docker container ("toolbox"), driven
-live via `docker exec`. Real output, real targets you're authorized to test,
-streamed back into the TUI as it happens.
+A desktop pentest workstation. The app itself is a normal Tauri + Svelte
+desktop UI, but every actual tool — nmap, sqlmap, Metasploit, hydra, tshark,
+Tor, everything — executes inside a single sandboxed Docker container
+("toolbox"), driven live via `docker exec`. Real output, real targets you're
+authorized to test, streamed back into an embedded terminal as it happens.
 
 Only ever run tools here against systems you own or have explicit written
 authorization to test.
 
 ## Features
 
-- **Tool browser** — categorized registry of pentest tools (recon, web,
-  exploitation, credentials, traffic), launch with a target/flags prompt.
+- **Embedded terminal(s)** — multiple real shell tabs backed by an
+  interactive `docker exec` PTY session into the toolbox container, using
+  xterm.js on the frontend.
+- **Built-in code editor** — browse the container's filesystem in the Files
+  sidebar and open any file in a syntax-highlighted, multi-tab CodeMirror 6
+  editor (language auto-detected from the file extension). `Ctrl+S` / `Cmd+S`
+  saves back into the container; unsaved tabs show a `●` marker. The file
+  tree polls the container and picks up files/folders created from the
+  terminal (or by other tools) automatically.
+- **Tool sidebar** — categorized registry of pentest tools (recon, web,
+  exploitation, credentials, traffic); clicking one inserts its invocation
+  into the active terminal tab.
 - **Install on demand** — tools that aren't baked into the toolbox image yet
-  (e.g. `subfinder`, `amass`, `wpscan` in v1) show up greyed out as
-  "not installed". Press `i` to install one; it installs in the background
-  inside the container (streamed into the Output Pane like a tool run) —
-  the TUI stays responsive the whole time.
-- **Live output pane** — streaming stdout/stderr from the running tool.
-- **AI assistant panel** — ask questions about the last tool's output; runs
-  entirely on a local Ollama model, toggle on/off with `Ctrl+A`. When off, no
-  network call is made at all.
+  (e.g. `subfinder`, `amass`, `wpscan` in v1) show up with an "install"
+  badge. Clicking installs in the background inside the container, streamed
+  live into the sidebar — the UI stays responsive the whole time.
+- **AI assistant panel** — ask questions about the active terminal's recent
+  output; runs entirely on a local Ollama model, toggle with `Ctrl+I`. When
+  off, no network call is made at all.
 - **Tor toggle** — pre-installed and pre-configured inside the container, off
-  by default. `Ctrl+T` starts/stops it; tools marked `tor_wrappable` in the
+  by default. Toggle from the status bar; tools marked `tor_wrappable` in the
   registry get transparently wrapped with `torsocks` while Tor is on.
 - **Registry-driven extensibility** — tools are defined in
   `registry/tools.toml`, not hardcoded. Add a tool by appending a table entry;
@@ -33,6 +41,7 @@ authorization to test.
 
 - Docker (running daemon)
 - Rust/Cargo (stable)
+- Node.js + npm (to build the frontend)
 - [Ollama](https://ollama.com) running locally, with a model pulled
 
 ## Quick start
@@ -42,38 +51,33 @@ authorization to test.
 ```
 
 This builds the toolbox Docker image if it doesn't exist yet, warns if Ollama
-isn't reachable or the default model isn't pulled, then launches the TUI.
+isn't reachable or the default model isn't pulled, builds the frontend, then
+launches the desktop app.
 
 Or step by step:
 
 ```sh
 make image         # build the toolbox Docker image
 make ollama-pull    # pull the default AI model
-make run             # build image if needed + cargo run --release
+make run             # build image + frontend + app, then launch it
 ```
-
-## Keybindings
-
-| Key       | Action                              |
-|-----------|--------------------------------------|
-| `Tab`     | cycle focus: Browser → Output → AI  |
-| `j` / `k` | move selection / scroll             |
-| `Enter`   | launch selected tool / submit input |
-| `i`       | install the selected tool (if not already installed) |
-| `Esc`     | return focus to Browser             |
-| `Ctrl+T`  | toggle Tor on/off                   |
-| `Ctrl+A`  | toggle AI assistant on/off          |
-| `Ctrl+C` / `q` | quit                            |
 
 ## Architecture
 
 ```
-Host                                    Docker container "cyberbox-toolbox"
- cyber-box (Rust TUI)                    supervisord (pid 1)
-  ├─ bollard  ──── docker exec ───────►    ├─ tor (off by default)
-  │                                        ├─ keepalive
-  └─ reqwest ─────► Ollama (host, :11434)  └─ nmap, sqlmap, msf, hydra, ...
+Host                                        Docker container "cyberbox-toolbox"
+ cyber-box (Tauri + Svelte desktop app)      supervisord (pid 1)
+  ├─ cyberbox-core (bollard) ── docker exec ──►  ├─ tor (off by default)
+  │    │                                          ├─ keepalive
+  │    └─ interactive PTY exec ─► xterm.js         └─ nmap, sqlmap, msf, hydra, ...
+  └─ reqwest ─────► Ollama (host, :11434)
 ```
+
+`crates/cyberbox-core` is the shared library (Docker client, tool registry,
+Tor control, Ollama client, session handling) that `src-tauri` builds on.
+`frontend/` is the Svelte 5 + xterm.js + CodeMirror 6 UI; `src-tauri/`
+exposes it as Tauri commands (`pty_open`/`read_file`/`install_tool`/etc.)
+backed by `cyberbox-core`.
 
 Ollama runs on the host (not in the container) — it's already installed
 there, keeps the toolbox image focused on security tools, and avoids GPU
@@ -107,7 +111,7 @@ tor_wrappable = true
   container" instead, without changing the schema.
 - `install_cmd` — optional. If present, the tool doesn't need to be baked
   into `docker/toolbox.Dockerfile` at all: it shows up as "not installed" in
-  the browser, and pressing `i` runs this shell command inside the toolbox
+  the sidebar, and clicking it runs this shell command inside the toolbox
   container (in the background) to install it — anything from a plain
   `apt-get install -y ...` to bootstrapping a Go toolchain and building from
   source (see `subfinder` in `registry/tools.toml` for an example). Omit it
@@ -126,3 +130,5 @@ no Rust code changes required.
   if you want the GUI.
 - The AI panel calls a **host-local** Ollama instance, not the toolbox
   container — see [Architecture](#architecture).
+- The editor and file tree operate on the toolbox container's filesystem,
+  not the host's.

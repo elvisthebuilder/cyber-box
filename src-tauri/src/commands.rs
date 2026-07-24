@@ -142,6 +142,38 @@ pub async fn list_dir(state: State<'_, AppState>, path: String) -> Result<Vec<St
     Ok(out.lines().map(|l| l.to_string()).collect())
 }
 
+/// Reads a file from the container, returning its content base64-encoded
+/// (binary-safe, and keeps large payloads out of shell-escaping concerns).
+#[tauri::command]
+pub async fn read_file(state: State<'_, AppState>, path: String) -> Result<String, String> {
+    let safe_path = path.replace('\'', "");
+    let out = state
+        .docker
+        .exec_oneshot(format!(
+            "[ -f '{safe_path}' ] && base64 -w0 '{safe_path}' || echo __cyberbox_missing__"
+        ))
+        .await
+        .map_err(|e| e.to_string())?;
+    let out = out.trim();
+    if out == "__cyberbox_missing__" {
+        return Err(format!("{path} does not exist or is not a regular file"));
+    }
+    Ok(out.to_string())
+}
+
+/// Writes base64-encoded `content` to a file in the container, overwriting it.
+#[tauri::command]
+pub async fn write_file(state: State<'_, AppState>, path: String, content: String) -> Result<(), String> {
+    let safe_path = path.replace('\'', "");
+    // `content` is base64 (alphabet A-Za-z0-9+/=), safe to embed in single quotes.
+    let cmd = format!("printf '%s' '{content}' | base64 -d > '{safe_path}'");
+    let out = state.docker.exec_oneshot(cmd).await.map_err(|e| e.to_string())?;
+    if !out.trim().is_empty() {
+        return Err(out.trim().to_string());
+    }
+    Ok(())
+}
+
 /// Opens a real interactive shell in the toolbox container for tab `id`.
 /// Output bytes are forwarded as base64 via the `pty:{id}:data` event.
 #[tauri::command]

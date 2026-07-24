@@ -6,8 +6,13 @@
 
   let {
     onInsertText,
+    onOpenFile,
     activeTabId,
-  }: { onInsertText: (text: string, run: boolean) => void; activeTabId: string } = $props();
+  }: {
+    onInsertText: (text: string, run: boolean) => void;
+    onOpenFile: (path: string) => void;
+    activeTabId: string;
+  } = $props();
 
   let tools = $state<ToolInfo[]>([]);
   let activeTab = $state<"tools" | "files">("tools");
@@ -75,17 +80,42 @@
   let fsRoot = $state<FileNode>({ path: "/", name: "/", isDir: true, expanded: true });
   let cwdPollTimer: ReturnType<typeof setInterval> | undefined;
 
+  /** Re-lists `node`'s children in place if expanded, preserving the
+   * expanded/children state of any subfolders that still exist, then
+   * recurses into them — so a poll never collapses what's open. */
+  async function refreshNode(node: FileNode) {
+    if (!node.isDir || !node.expanded) return;
+    const fresh = await listChildren(node);
+    const existingByPath = new Map((node.children ?? []).map((c) => [c.path, c]));
+    node.children = fresh.map((f) => {
+      const existing = existingByPath.get(f.path);
+      if (existing) {
+        existing.name = f.name;
+        existing.isDir = f.isDir;
+        return existing;
+      }
+      return f;
+    });
+    for (const child of node.children) {
+      await refreshNode(child);
+    }
+  }
+
   async function refreshCwd() {
     const next = await api.ptyCwd(activeTabId).catch(() => null);
-    if (!next || next === cwd) return;
-    cwd = next;
-    const root: FileNode = { path: next, name: next, isDir: true, expanded: true };
-    root.children = await listChildren(root);
-    fsRoot = root;
+    if (!next) return;
+    if (next !== cwd) {
+      cwd = next;
+      const root: FileNode = { path: next, name: next, isDir: true, expanded: true };
+      root.children = await listChildren(root);
+      fsRoot = root;
+    } else {
+      await refreshNode(fsRoot);
+    }
   }
 
   function onFileClick(node: FileNode) {
-    onInsertText(`cat '${node.path}'`, true);
+    onOpenFile(node.path);
   }
 
   $effect(() => {
@@ -101,7 +131,7 @@
     refreshCwd();
     cwdPollTimer = setInterval(() => {
       if (activeTab === "files") refreshCwd();
-    }, 1500);
+    }, 1000);
     return () => {
       unlisteners.forEach((u) => u());
       if (cwdPollTimer) clearInterval(cwdPollTimer);

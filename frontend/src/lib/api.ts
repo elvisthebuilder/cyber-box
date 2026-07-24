@@ -4,6 +4,8 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export interface Tab {
   id: string;
   title: string;
+  kind: "terminal" | "editor";
+  path?: string;
 }
 
 export interface ToolInfo {
@@ -28,6 +30,8 @@ export const api = {
   refreshInstallStatus: () => invoke<void>("refresh_install_status"),
   installTool: (name: string) => invoke<void>("install_tool", { name }),
   listDir: (path: string) => invoke<string[]>("list_dir", { path }),
+  readFile: (path: string) => invoke<string>("read_file", { path }),
+  writeFile: (path: string, content: string) => invoke<void>("write_file", { path, content }),
   ptyOpen: (id: string) => invoke<void>("pty_open", { id }),
   ptyWrite: (id: string, data: string) => invoke<void>("pty_write", { id, data }),
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),
