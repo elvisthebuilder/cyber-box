@@ -1,0 +1,6 @@
+/target
+cyberbox.log
+node_modules/
+frontend/dist/
+src-tauri/gen/
+*.log

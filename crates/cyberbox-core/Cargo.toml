@@ -1,0 +1,16 @@
+[package]
+name = "cyberbox-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+bollard = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"

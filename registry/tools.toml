@@ -1,0 +1,184 @@
+# Cyber-Box tool registry.
+#
+# Each [[tool]] entry is the extensibility contract: add a tool by appending a
+# table here, no Rust code changes required. `{target}` and `{flags}` in
+# `invocation` are substituted at launch time. `image` is reserved for future
+# sidecar-container tools and is unused in v1.
+
+[[tool]]
+name = "nmap"
+category = "recon"
+description = "Network exploration and port scanning"
+binary = "nmap"
+invocation = "nmap {flags} {target}"
+default_flags = "-sV -T4"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "masscan"
+category = "recon"
+description = "High-speed port scanner"
+binary = "masscan"
+invocation = "masscan {flags} {target}"
+default_flags = "-p1-1000 --rate=1000"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "whois"
+category = "recon"
+description = "Domain/IP registration lookup"
+binary = "whois"
+invocation = "whois {target}"
+default_flags = ""
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "dig"
+category = "recon"
+description = "DNS lookup utility"
+binary = "dig"
+invocation = "dig {flags} {target}"
+default_flags = "+noall +answer"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "nikto"
+category = "web"
+description = "Web server vulnerability scanner"
+binary = "nikto"
+invocation = "nikto -h {target} {flags}"
+default_flags = ""
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "sqlmap"
+category = "web"
+description = "Automated SQL injection and database takeover tool"
+binary = "sqlmap"
+invocation = "sqlmap -u {target} {flags} --batch"
+default_flags = "--level=1 --risk=1"
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "gobuster"
+category = "web"
+description = "Directory/file/DNS brute-forcer"
+binary = "gobuster"
+invocation = "gobuster dir -u {target} {flags}"
+default_flags = "-w /usr/share/wordlists/dirb/common.txt"
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "ffuf"
+category = "web"
+description = "Fast web fuzzer"
+binary = "ffuf"
+invocation = "ffuf -u {target} {flags}"
+default_flags = "-w /usr/share/wordlists/dirb/common.txt:FUZZ"
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "httpx"
+category = "web"
+description = "Fast HTTP probing toolkit"
+binary = "httpx"
+invocation = "echo {target} | httpx {flags}"
+default_flags = "-title -tech-detect -status-code"
+output = "stream"
+tor_wrappable = true
+
+[[tool]]
+name = "metasploit"
+category = "exploitation"
+description = "Metasploit Framework console"
+binary = "msfconsole"
+invocation = "msfconsole -q -x '{flags}'"
+default_flags = "version; exit"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "hydra"
+category = "credentials"
+description = "Online password brute-forcing tool"
+binary = "hydra"
+invocation = "hydra {flags} {target}"
+default_flags = "-l admin -P /usr/share/wordlists/rockyou.txt ssh"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "john"
+category = "credentials"
+description = "Offline password hash cracker (John the Ripper)"
+binary = "john"
+invocation = "john {flags} {target}"
+default_flags = "--wordlist=/usr/share/wordlists/rockyou.txt"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "hashcat"
+category = "credentials"
+description = "GPU-accelerated password hash cracker"
+binary = "hashcat"
+invocation = "hashcat {flags} {target}"
+default_flags = "-m 0 -a 0 /usr/share/wordlists/rockyou.txt"
+output = "stream"
+tor_wrappable = false
+
+[[tool]]
+name = "tshark"
+category = "traffic"
+description = "Command-line packet capture and analysis (headless Wireshark)"
+binary = "tshark"
+invocation = "tshark {flags}"
+default_flags = "-i any -c 50"
+output = "stream"
+tor_wrappable = false
+
+# --- Tools below are NOT baked into the toolbox image by default. They show
+# up as "not installed" in the browser; press `i` on one to install it into
+# the running container in the background via its `install_cmd`. This is the
+# on-demand install flow that the future tool-catalog repo will also drive.
+
+[[tool]]
+name = "subfinder"
+category = "recon"
+description = "Passive subdomain enumeration"
+binary = "subfinder"
+invocation = "subfinder -d {target} {flags}"
+default_flags = "-silent"
+output = "stream"
+tor_wrappable = true
+install_cmd = "apt-get update && apt-get install -y golang-go && GOTOOLCHAIN=auto go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && cp $(go env GOPATH)/bin/subfinder /usr/local/bin/subfinder"
+
+[[tool]]
+name = "amass"
+category = "recon"
+description = "In-depth attack surface mapping and asset discovery"
+binary = "amass"
+invocation = "amass enum -d {target} {flags}"
+default_flags = ""
+output = "stream"
+tor_wrappable = true
+install_cmd = "apt-get update && apt-get install -y amass"
+
+[[tool]]
+name = "wpscan"
+category = "web"
+description = "WordPress vulnerability scanner"
+binary = "wpscan"
+invocation = "wpscan --url {target} {flags}"
+default_flags = "--no-banner"
+output = "stream"
+tor_wrappable = true
+install_cmd = "apt-get update && apt-get install -y wpscan"
