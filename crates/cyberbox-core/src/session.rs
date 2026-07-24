@@ -37,7 +37,9 @@ impl ToolSession {
                     self.status = SessionStatus::Finished { exit_code };
                     self.lines.push(format!(
                         "--- finished (exit code: {}) ---",
-                        exit_code.map(|c| c.to_string()).unwrap_or_else(|| "?".into())
+                        exit_code
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "?".into())
                     ));
                 }
                 OutputEvent::Error(e) => {

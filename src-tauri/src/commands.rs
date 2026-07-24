@@ -36,7 +36,10 @@ pub async fn list_tools(state: State<'_, AppState>) -> Result<Vec<ToolInfo>, Str
         .iter()
         .map(|spec| ToolInfo {
             spec: spec.clone(),
-            install_status: statuses.get(&spec.name).cloned().unwrap_or(InstallStatus::Unknown),
+            install_status: statuses
+                .get(&spec.name)
+                .cloned()
+                .unwrap_or(InstallStatus::Unknown),
         })
         .collect())
 }
@@ -69,16 +72,29 @@ pub async fn refresh_install_status(state: State<'_, AppState>) -> Result<(), St
         .registry
         .tools
         .iter()
-        .map(|t| format!("command -v {0} >/dev/null 2>&1 && echo '{0}:yes' || echo '{0}:no'", t.binary))
+        .map(|t| {
+            format!(
+                "command -v {0} >/dev/null 2>&1 && echo '{0}:yes' || echo '{0}:no'",
+                t.binary
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ");
 
-    let out = state.docker.exec_oneshot(probe).await.map_err(|e| e.to_string())?;
+    let out = state
+        .docker
+        .exec_oneshot(probe)
+        .await
+        .map_err(|e| e.to_string())?;
     let mut statuses = state.install_status.lock().await;
     for line in out.lines() {
         if let Some((binary, result)) = line.rsplit_once(':') {
             if let Some(tool) = state.registry.tools.iter().find(|t| t.binary == binary) {
-                let status = if result.trim() == "yes" { InstallStatus::Installed } else { InstallStatus::NotInstalled };
+                let status = if result.trim() == "yes" {
+                    InstallStatus::Installed
+                } else {
+                    InstallStatus::NotInstalled
+                };
                 statuses.insert(tool.name.clone(), status);
             }
         }
@@ -89,8 +105,18 @@ pub async fn refresh_install_status(state: State<'_, AppState>) -> Result<(), St
 /// Installs a tool via its `install_cmd`, streaming progress as
 /// `install:{name}:line` events and finishing with `install:{name}:done`.
 #[tauri::command]
-pub async fn install_tool(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<(), String> {
-    let Some(tool) = state.registry.tools.iter().find(|t| t.name == name).cloned() else {
+pub async fn install_tool(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<(), String> {
+    let Some(tool) = state
+        .registry
+        .tools
+        .iter()
+        .find(|t| t.name == name)
+        .cloned()
+    else {
         return Err(format!("unknown tool: {name}"));
     };
     let Some(install_cmd) = tool.install_cmd.clone() else {
@@ -120,7 +146,11 @@ pub async fn install_tool(app: AppHandle, state: State<'_, AppState>, name: Stri
         }
     }
 
-    let final_status = if success { InstallStatus::Installed } else { InstallStatus::Failed("install failed".to_string()) };
+    let final_status = if success {
+        InstallStatus::Installed
+    } else {
+        InstallStatus::Failed("install failed".to_string())
+    };
     {
         let mut statuses = state.install_status.lock().await;
         statuses.insert(name.clone(), final_status.clone());
@@ -163,11 +193,19 @@ pub async fn read_file(state: State<'_, AppState>, path: String) -> Result<Strin
 
 /// Writes base64-encoded `content` to a file in the container, overwriting it.
 #[tauri::command]
-pub async fn write_file(state: State<'_, AppState>, path: String, content: String) -> Result<(), String> {
+pub async fn write_file(
+    state: State<'_, AppState>,
+    path: String,
+    content: String,
+) -> Result<(), String> {
     let safe_path = path.replace('\'', "");
     // `content` is base64 (alphabet A-Za-z0-9+/=), safe to embed in single quotes.
     let cmd = format!("printf '%s' '{content}' | base64 -d > '{safe_path}'");
-    let out = state.docker.exec_oneshot(cmd).await.map_err(|e| e.to_string())?;
+    let out = state
+        .docker
+        .exec_oneshot(cmd)
+        .await
+        .map_err(|e| e.to_string())?;
     if !out.trim().is_empty() {
         return Err(out.trim().to_string());
     }
@@ -177,7 +215,11 @@ pub async fn write_file(state: State<'_, AppState>, path: String, content: Strin
 /// Opens a real interactive shell in the toolbox container for tab `id`.
 /// Output bytes are forwarded as base64 via the `pty:{id}:data` event.
 #[tauri::command]
-pub async fn pty_open(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
+pub async fn pty_open(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<(), String> {
     let (out_tx, mut out_rx) = mpsc::unbounded_channel::<Vec<u8>>();
     // `id` is always a UUID from the frontend (crypto.randomUUID()), safe to
     // interpolate directly. We track the shell's cwd by appending an
@@ -203,13 +245,22 @@ pub async fn pty_open(app: AppHandle, state: State<'_, AppState>, id: String) ->
         "[ -f /root/.bashrc ] && source /root/.bashrc\nPS1=\"$PS1\\$(pwd > {cwd_file} 2>/dev/null)\"\n"
     );
     let write_rc = format!("cat > '{rc_file}' << 'CYBERBOX_EOF'\n{rc_contents}CYBERBOX_EOF\n");
-    state.docker.exec_oneshot(write_rc).await.map_err(|e| e.to_string())?;
+    state
+        .docker
+        .exec_oneshot(write_rc)
+        .await
+        .map_err(|e| e.to_string())?;
 
     tracing::info!(%id, %rc_file, %cwd_file, "pty_open: spawning interactive shell");
     let (exec_id, input) = state
         .docker
         .exec_interactive(
-            vec!["/bin/bash".to_string(), "--rcfile".to_string(), rc_file, "-i".to_string()],
+            vec![
+                "/bin/bash".to_string(),
+                "--rcfile".to_string(),
+                rc_file,
+                "-i".to_string(),
+            ],
             out_tx,
         )
         .await
@@ -247,7 +298,12 @@ pub async fn pty_write(state: State<'_, AppState>, id: String, data: String) -> 
 }
 
 #[tauri::command]
-pub async fn pty_resize(state: State<'_, AppState>, id: String, cols: u16, rows: u16) -> Result<(), String> {
+pub async fn pty_resize(
+    state: State<'_, AppState>,
+    id: String,
+    cols: u16,
+    rows: u16,
+) -> Result<(), String> {
     let exec_id = {
         let sessions = state.pty_sessions.lock().await;
         sessions.get(&id).map(|s| s.exec_id.clone())
@@ -255,7 +311,11 @@ pub async fn pty_resize(state: State<'_, AppState>, id: String, cols: u16, rows:
     let Some(exec_id) = exec_id else {
         return Err(format!("no pty session for tab {id}"));
     };
-    state.docker.resize_exec(&exec_id, cols, rows).await.map_err(|e| e.to_string())
+    state
+        .docker
+        .resize_exec(&exec_id, cols, rows)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -263,7 +323,9 @@ pub async fn pty_close(state: State<'_, AppState>, id: String) -> Result<(), Str
     state.pty_sessions.lock().await.remove(&id);
     let _ = state
         .docker
-        .exec_oneshot(format!("rm -f /tmp/.cyberbox-cwd-{id} /tmp/.cyberbox-rc-{id}"))
+        .exec_oneshot(format!(
+            "rm -f /tmp/.cyberbox-cwd-{id} /tmp/.cyberbox-rc-{id}"
+        ))
         .await;
     Ok(())
 }
@@ -296,7 +358,13 @@ pub async fn ask_ai(
     context: String,
 ) -> Result<(), String> {
     let (tx, mut rx) = mpsc::unbounded_channel();
-    ai::ask(state.config.ollama_url.clone(), state.config.ollama_model.clone(), question, context, tx);
+    ai::ask(
+        state.config.ollama_url.clone(),
+        state.config.ollama_model.clone(),
+        question,
+        context,
+        tx,
+    );
 
     while let Some(event) = rx.recv().await {
         match event {
@@ -313,4 +381,3 @@ pub async fn ask_ai(
     }
     Ok(())
 }
-

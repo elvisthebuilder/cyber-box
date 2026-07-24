@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
-use bollard::container::{Config as ContainerConfig, CreateContainerOptions, StartContainerOptions};
+use bollard::container::{
+    Config as ContainerConfig, CreateContainerOptions, StartContainerOptions,
+};
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecResults};
 use bollard::models::HostConfig;
 use bollard::Docker;
@@ -35,16 +37,19 @@ impl DockerClient {
 
     /// Creates the toolbox container if it doesn't exist, starts it if stopped.
     pub async fn ensure_container(&self) -> Result<()> {
-        match self.docker.inspect_container(&self.container_name, None).await {
+        match self
+            .docker
+            .inspect_container(&self.container_name, None)
+            .await
+        {
             Ok(info) => {
-                let running = info
-                    .state
-                    .as_ref()
-                    .and_then(|s| s.running)
-                    .unwrap_or(false);
+                let running = info.state.as_ref().and_then(|s| s.running).unwrap_or(false);
                 if !running {
                     self.docker
-                        .start_container(&self.container_name, None::<StartContainerOptions<String>>)
+                        .start_container(
+                            &self.container_name,
+                            None::<StartContainerOptions<String>>,
+                        )
                         .await
                         .context("failed to start existing toolbox container")?;
                 }
@@ -178,7 +183,10 @@ impl DockerClient {
             .context("interactive exec create failed")?;
         let exec_id = exec.id.clone();
 
-        let StartExecResults::Attached { mut output, mut input } = self
+        let StartExecResults::Attached {
+            mut output,
+            mut input,
+        } = self
             .docker
             .start_exec(&exec.id, None)
             .await
@@ -216,7 +224,13 @@ impl DockerClient {
     /// Resizes the pty backing an interactive exec session (call on terminal resize).
     pub async fn resize_exec(&self, exec_id: &str, cols: u16, rows: u16) -> Result<()> {
         self.docker
-            .resize_exec(exec_id, ResizeExecOptions { height: rows, width: cols })
+            .resize_exec(
+                exec_id,
+                ResizeExecOptions {
+                    height: rows,
+                    width: cols,
+                },
+            )
             .await
             .context("resize_exec failed")?;
         Ok(())
@@ -239,8 +253,11 @@ impl DockerClient {
             .context("exec create failed")?;
 
         let mut out = String::new();
-        if let StartExecResults::Attached { mut output, .. } =
-            self.docker.start_exec(&exec.id, None).await.context("exec start failed")?
+        if let StartExecResults::Attached { mut output, .. } = self
+            .docker
+            .start_exec(&exec.id, None)
+            .await
+            .context("exec start failed")?
         {
             while let Some(chunk) = output.next().await {
                 if let Ok(log) = chunk {

@@ -19,7 +19,10 @@ export interface ToolInfo {
   tor_wrappable: boolean;
   image: string | null;
   install_cmd: string | null;
-  install_status: { kind: "Unknown" | "Installed" | "NotInstalled" | "Installing" | "Failed"; detail?: string };
+  install_status: {
+    kind: "Unknown" | "Installed" | "NotInstalled" | "Installing" | "Failed";
+    detail?: string;
+  };
 }
 
 export const api = {

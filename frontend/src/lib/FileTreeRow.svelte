@@ -25,6 +25,7 @@
 
 <button class="row" style="padding-left: {6 + depth * 12}px" onclick={toggle} title={node.name}>
   <span class="chevron" class:open={node.expanded} class:invisible={!node.isDir}>&#9656;</span>
+  <!-- eslint-disable-next-line svelte/no-at-html-tags -- icon.svg comes from the fixed local icon map in fileIcons.ts, not user input -->
   <span class="icon" style="color: {icon.color}">{@html icon.svg}</span>
   <span class="name">{node.name}</span>
 </button>

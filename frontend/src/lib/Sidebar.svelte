@@ -32,7 +32,11 @@
 
   function toggleCategory(cat: string) {
     const next = new Set(expandedCategories);
-    next.has(cat) ? next.delete(cat) : next.add(cat);
+    if (next.has(cat)) {
+      next.delete(cat);
+    } else {
+      next.add(cat);
+    }
     expandedCategories = next;
   }
 
@@ -167,7 +171,7 @@
             </button>
             {#if installingLog[tool.name]?.length}
               <div class="install-log">
-                {#each installingLog[tool.name].slice(-3) as line}
+                {#each installingLog[tool.name].slice(-3) as line, i (i)}
                   <div class="log-line">{line}</div>
                 {/each}
               </div>

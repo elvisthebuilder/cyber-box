@@ -27,7 +27,28 @@ interface Rule {
 }
 
 const RULES: Rule[] = [
-  { exts: ["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "rs", "go", "c", "cpp", "h", "java", "rb", "php", "lua"], icon: "code", color: "#7aa2f7" },
+  {
+    exts: [
+      "ts",
+      "tsx",
+      "js",
+      "jsx",
+      "mjs",
+      "cjs",
+      "py",
+      "rs",
+      "go",
+      "c",
+      "cpp",
+      "h",
+      "java",
+      "rb",
+      "php",
+      "lua",
+    ],
+    icon: "code",
+    color: "#7aa2f7",
+  },
   { exts: ["json", "jsonc", "toml", "yaml", "yml", "ini", "cfg", "conf"], icon: "braces", color: "#e0af68" },
   { exts: ["png", "jpg", "jpeg", "gif", "svg", "ico", "webp", "bmp"], icon: "image", color: "#bb9af7" },
   { exts: ["md", "markdown", "txt", "log", "rst"], icon: "text", color: "#9aa5ce" },

@@ -1,16 +1,32 @@
 <script lang="ts">
   import { onDestroy, onMount } from "svelte";
   import { EditorState, Compartment } from "@codemirror/state";
-  import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from "@codemirror/view";
+  import {
+    EditorView,
+    keymap,
+    lineNumbers,
+    highlightActiveLine,
+    highlightActiveLineGutter,
+  } from "@codemirror/view";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-  import { syntaxHighlighting, defaultHighlightStyle, bracketMatching, indentOnInput } from "@codemirror/language";
+  import {
+    syntaxHighlighting,
+    defaultHighlightStyle,
+    bracketMatching,
+    indentOnInput,
+  } from "@codemirror/language";
   import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-  import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
+  import {
+    closeBrackets,
+    closeBracketsKeymap,
+    autocompletion,
+    completionKeymap,
+  } from "@codemirror/autocomplete";
   import { languages } from "@codemirror/language-data";
   import { api, b64decode, b64encode } from "./api";
 
+  // `id` identifies this tab for the parent's keyed `#each` — unused here.
   let {
-    id,
     path,
     active,
     onDirtyChange,
@@ -31,7 +47,9 @@
       ".cm-gutters": { backgroundColor: "var(--bg)", color: "var(--text-faint)", border: "none" },
       ".cm-activeLine": { backgroundColor: "var(--border-soft)" },
       ".cm-activeLineGutter": { backgroundColor: "var(--border-soft)" },
-      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "#2ea04355 !important" },
+      ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+        backgroundColor: "#2ea04355 !important",
+      },
       ".cm-scroller": { fontFamily: "var(--font-mono)", overflow: "auto" },
       "&.cm-focused": { outline: "none" },
     },
@@ -120,7 +138,11 @@
   {:else if status === "error"}
     <div class="center-msg error">{errorText}</div>
   {/if}
-  <div class="cm-host" class:invisible={status !== "ready" && status !== "saving"} bind:this={container}></div>
+  <div
+    class="cm-host"
+    class:invisible={status !== "ready" && status !== "saving"}
+    bind:this={container}
+  ></div>
 </div>
 
 <style>

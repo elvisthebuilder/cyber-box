@@ -11,7 +11,10 @@ pub async fn set_enabled(docker: &DockerClient, enabled: bool) -> Result<()> {
 }
 
 pub async fn is_running(docker: &DockerClient) -> bool {
-    match docker.exec_oneshot("supervisorctl status tor".to_string()).await {
+    match docker
+        .exec_oneshot("supervisorctl status tor".to_string())
+        .await
+    {
         Ok(out) => out.contains("RUNNING"),
         Err(_) => false,
     }

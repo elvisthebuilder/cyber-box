@@ -90,7 +90,13 @@
   <div class="body">
     <Sidebar onInsertText={insertText} onOpenFile={openFile} activeTabId={activeId} />
     <div class="main">
-      <TabBar tabs={displayTabs} {activeId} onSelect={(id) => (activeId = id)} onClose={closeTab} onNew={newTab} />
+      <TabBar
+        tabs={displayTabs}
+        {activeId}
+        onSelect={(id) => (activeId = id)}
+        onClose={closeTab}
+        onNew={newTab}
+      />
       <div class="term-stack">
         {#each tabs as tab (tab.id)}
           {#if tab.kind === "editor" && tab.path}
@@ -105,7 +111,11 @@
           {/if}
         {/each}
       </div>
-      <AiPanel open={aiOpen} enabled={aiEnabled} getContext={() => termRefs[activeId]?.getBufferText() ?? ""} />
+      <AiPanel
+        open={aiOpen}
+        enabled={aiEnabled}
+        getContext={() => termRefs[activeId]?.getBufferText() ?? ""}
+      />
     </div>
   </div>
   <StatusBar

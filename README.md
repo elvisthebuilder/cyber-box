@@ -1,13 +1,28 @@
 # cyber-box
 
+[![CI](https://github.com/elvisthebuilder/cyber-box/actions/workflows/ci.yml/badge.svg)](https://github.com/elvisthebuilder/cyber-box/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A desktop pentest workstation. The app itself is a normal Tauri + Svelte
-desktop UI, but every actual tool — nmap, sqlmap, Metasploit, hydra, tshark,
-Tor, everything — executes inside a single sandboxed Docker container
-("toolbox"), driven live via `docker exec`. Real output, real targets you're
+desktop app, but every actual tool — nmap, sqlmap, Metasploit, hydra, tshark,
+Tor, everything — executes inside a single sandboxed Docker container (the
+"toolbox"), driven live via `docker exec`. Real output, real targets you're
 authorized to test, streamed back into an embedded terminal as it happens.
 
-Only ever run tools here against systems you own or have explicit written
-authorization to test.
+> [!WARNING]
+> Only run tools from this project against systems you own or have explicit
+> written authorization to test. You are responsible for how you use it.
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Architecture](#architecture)
+- [Extending the registry](#extending-the-registry)
+- [Known limitations](#known-limitations-v1)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
@@ -47,6 +62,8 @@ authorization to test.
 ## Quick start
 
 ```sh
+git clone https://github.com/elvisthebuilder/cyber-box.git
+cd cyber-box
 ./scripts/run.sh
 ```
 
@@ -73,11 +90,19 @@ Host                                        Docker container "cyberbox-toolbox"
   └─ reqwest ─────► Ollama (host, :11434)
 ```
 
-`crates/cyberbox-core` is the shared library (Docker client, tool registry,
-Tor control, Ollama client, session handling) that `src-tauri` builds on.
-`frontend/` is the Svelte 5 + xterm.js + CodeMirror 6 UI; `src-tauri/`
-exposes it as Tauri commands (`pty_open`/`read_file`/`install_tool`/etc.)
-backed by `cyberbox-core`.
+```
+crates/cyberbox-core/   shared Rust library: Docker client, tool registry,
+                         Tor control, Ollama client, session handling
+src-tauri/               Tauri desktop app backend (Rust), built on cyberbox-core
+frontend/                Svelte 5 + xterm.js + CodeMirror 6 desktop UI
+docker/                  the "toolbox" container image (Kali + tools + Tor)
+registry/tools.toml      the tool manifest — see "Extending the registry" below
+```
+
+`src-tauri` exposes Tauri commands (`pty_open`, `read_file`/`write_file`,
+`install_tool`, `toggle_tor`, `ask_ai`, ...) that the Svelte frontend calls
+via `@tauri-apps/api`; each one is backed by `cyberbox-core`, which owns the
+actual Docker/Tor/Ollama logic so it isn't tied to any particular UI.
 
 Ollama runs on the host (not in the container) — it's already installed
 there, keeps the toolbox image focused on security tools, and avoids GPU
@@ -132,3 +157,14 @@ no Rust code changes required.
   container — see [Architecture](#architecture).
 - The editor and file tree operate on the toolbox container's filesystem,
   not the host's.
+
+## Contributing
+
+Bug fixes, new tools in the registry, UI polish, and platform support are
+all welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how the project is
+laid out, how to run the same checks CI does, and how to add a tool to the
+registry (usually just a TOML entry, no code).
+
+## License
+
+[MIT](LICENSE)

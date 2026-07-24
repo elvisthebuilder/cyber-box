@@ -1,13 +1,10 @@
 <script lang="ts">
   import { api, onEvent } from "./api";
 
-  let {
-    open,
-    enabled,
-    getContext,
-  }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
+  let { open, enabled, getContext }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
 
   interface Message {
+    id: string;
     role: "user" | "assistant";
     text: string;
   }
@@ -20,7 +17,11 @@
     if (!enabled || busy || !input.trim()) return;
     const question = input.trim();
     input = "";
-    messages = [...messages, { role: "user", text: question }, { role: "assistant", text: "" }];
+    messages = [
+      ...messages,
+      { id: crypto.randomUUID(), role: "user", text: question },
+      { id: crypto.randomUUID(), role: "assistant", text: "" },
+    ];
     busy = true;
 
     const requestId = crypto.randomUUID();
@@ -60,14 +61,16 @@
 
 {#if open}
   <div class="panel">
-    <div class="header">AI Agent {#if !enabled}<span class="off">(disabled)</span>{/if}</div>
+    <div class="header">
+      AI Agent {#if !enabled}<span class="off">(disabled)</span>{/if}
+    </div>
     <div class="messages">
       {#if !enabled}
         <div class="hint">AI suggestions are off. Toggle them from the status bar.</div>
       {:else if messages.length === 0}
         <div class="hint">Ask about the active terminal's output, a tool, or anything else.</div>
       {/if}
-      {#each messages as m}
+      {#each messages as m (m.id)}
         <div class="msg {m.role}">
           <div class="role">{m.role === "user" ? "you" : "ai"}</div>
           <div class="text">{m.text || "…"}</div>
@@ -80,8 +83,7 @@
         onkeydown={onKeydown}
         disabled={!enabled}
         placeholder={enabled ? "Ask the AI agent…" : "AI is disabled"}
-        rows="2"
-      ></textarea>
+        rows="2"></textarea>
       <button onclick={ask} disabled={!enabled || busy}>Send</button>
     </div>
   </div>
