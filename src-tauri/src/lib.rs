@@ -54,6 +54,7 @@ pub fn run() {
             commands::pty_resize,
             commands::pty_close,
             commands::pty_cwd,
+            commands::list_ollama_models,
             commands::ask_ai,
         ])
         .run(tauri::generate_context!())

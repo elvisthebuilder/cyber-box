@@ -23,6 +23,25 @@ struct GenerateChunk {
     done: bool,
 }
 
+#[derive(Deserialize)]
+struct TagsResponse {
+    models: Vec<TagsModel>,
+}
+
+#[derive(Deserialize)]
+struct TagsModel {
+    name: String,
+}
+
+/// Lists the models this Ollama instance actually has pulled, so the caller
+/// can offer a real choice instead of assuming a specific model exists.
+pub async fn list_models(ollama_url: &str) -> anyhow::Result<Vec<String>> {
+    let url = format!("{}/api/tags", ollama_url.trim_end_matches('/'));
+    let resp = reqwest::get(&url).await?.error_for_status()?;
+    let parsed: TagsResponse = resp.json().await?;
+    Ok(parsed.models.into_iter().map(|m| m.name).collect())
+}
+
 /// Sends `question` plus recent tool-output `context` to Ollama and streams
 /// the response back through `tx`. No-op unless called — the caller is
 /// responsible for gating this behind the AI-enabled toggle.
@@ -57,6 +76,19 @@ pub fn ask(
                 return;
             }
         };
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            let detail = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .and_then(|v| v.get("error").and_then(|e| e.as_str()).map(str::to_string))
+                .unwrap_or(text);
+            let _ = tx.send(AiEvent::Error(format!(
+                "Ollama returned {status}: {detail}"
+            )));
+            return;
+        }
 
         let mut stream = resp.bytes_stream();
         let mut buf = String::new();

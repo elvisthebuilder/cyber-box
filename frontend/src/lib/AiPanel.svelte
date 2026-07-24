@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api, onEvent } from "./api";
 
   let { open, enabled, getContext }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
@@ -13,8 +14,30 @@
   let input = $state("");
   let busy = $state(false);
 
+  let models = $state<string[]>([]);
+  let modelsLoaded = $state(false);
+  let modelsError = $state("");
+  // No default: the user picks from whatever they actually have pulled.
+  let selectedModel = $state("");
+
+  async function loadModels() {
+    try {
+      models = await api.listOllamaModels();
+      modelsError = models.length === 0 ? "No Ollama models found. Pull one with `ollama pull <model>`." : "";
+    } catch (e) {
+      models = [];
+      modelsError = `Couldn't reach Ollama: ${e}`;
+    } finally {
+      modelsLoaded = true;
+    }
+  }
+
+  onMount(() => {
+    loadModels();
+  });
+
   async function ask() {
-    if (!enabled || busy || !input.trim()) return;
+    if (!enabled || busy || !selectedModel || !input.trim()) return;
     const question = input.trim();
     input = "";
     messages = [
@@ -46,7 +69,7 @@
       unErr();
     });
 
-    api.askAi(requestId, question, context).catch(() => {
+    api.askAi(requestId, selectedModel, question, context).catch(() => {
       busy = false;
     });
   }
@@ -62,11 +85,29 @@
 {#if open}
   <div class="panel">
     <div class="header">
-      AI Agent {#if !enabled}<span class="off">(disabled)</span>{/if}
+      <span
+        >AI Agent {#if !enabled}<span class="off">(disabled)</span>{/if}</span
+      >
+      {#if enabled && models.length > 0}
+        <select class="model-select" bind:value={selectedModel} title="Ollama model">
+          <option value="" disabled>choose a model…</option>
+          {#each models as m (m)}
+            <option value={m}>{m}</option>
+          {/each}
+        </select>
+      {:else if enabled && modelsLoaded}
+        <button class="retry" onclick={loadModels} title="Retry loading models">&#8635;</button>
+      {/if}
     </div>
     <div class="messages">
       {#if !enabled}
         <div class="hint">AI suggestions are off. Toggle them from the status bar.</div>
+      {:else if modelsError}
+        <div class="hint error">{modelsError}</div>
+      {:else if !selectedModel}
+        <div class="hint">
+          Pick a model above, then ask about the active terminal's output or anything else.
+        </div>
       {:else if messages.length === 0}
         <div class="hint">Ask about the active terminal's output, a tool, or anything else.</div>
       {/if}
@@ -81,10 +122,14 @@
       <textarea
         bind:value={input}
         onkeydown={onKeydown}
-        disabled={!enabled}
-        placeholder={enabled ? "Ask the AI agent…" : "AI is disabled"}
+        disabled={!enabled || !selectedModel}
+        placeholder={!enabled
+          ? "AI is disabled"
+          : !selectedModel
+            ? "Choose a model above first"
+            : "Ask the AI agent…"}
         rows="2"></textarea>
-      <button onclick={ask} disabled={!enabled || busy}>Send</button>
+      <button onclick={ask} disabled={!enabled || !selectedModel || busy}>Send</button>
     </div>
   </div>
 {/if}
@@ -112,10 +157,39 @@
     letter-spacing: 0.04em;
     border-bottom: 1px solid var(--border);
     color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
   .off {
     color: var(--text-faint);
     font-weight: 400;
+  }
+  .model-select {
+    max-width: 160px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 11px;
+    font-weight: 400;
+    padding: 3px 4px;
+  }
+  .retry {
+    background: transparent;
+    border: none;
+    color: var(--text-faint);
+    font-size: 13px;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .retry:hover {
+    background: var(--border-soft);
+    color: var(--text);
+  }
+  .hint.error {
+    color: var(--danger);
   }
   .messages {
     flex: 1;

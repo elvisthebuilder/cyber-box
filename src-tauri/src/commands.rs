@@ -348,19 +348,29 @@ pub async fn pty_cwd(state: State<'_, AppState>, id: String) -> Result<String, S
     Ok(cwd.to_string())
 }
 
+/// Lists the Ollama models actually pulled on this machine, so the AI panel
+/// can offer a real choice instead of assuming a specific model exists.
+#[tauri::command]
+pub async fn list_ollama_models(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    ai::list_models(&state.config.ollama_url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Streams an AI response as `ai:{request_id}:token` / `:done` / `:error` events.
 #[tauri::command]
 pub async fn ask_ai(
     app: AppHandle,
     state: State<'_, AppState>,
     request_id: String,
+    model: String,
     question: String,
     context: String,
 ) -> Result<(), String> {
     let (tx, mut rx) = mpsc::unbounded_channel();
     ai::ask(
         state.config.ollama_url.clone(),
-        state.config.ollama_model.clone(),
+        model,
         question,
         context,
         tx,

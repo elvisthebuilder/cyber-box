@@ -40,8 +40,9 @@ export const api = {
   ptyResize: (id: string, cols: number, rows: number) => invoke<void>("pty_resize", { id, cols, rows }),
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
   ptyCwd: (id: string) => invoke<string>("pty_cwd", { id }),
-  askAi: (requestId: string, question: string, context: string) =>
-    invoke<void>("ask_ai", { requestId, question, context }),
+  listOllamaModels: () => invoke<string[]>("list_ollama_models"),
+  askAi: (requestId: string, model: string, question: string, context: string) =>
+    invoke<void>("ask_ai", { requestId, model, question, context }),
 };
 
 export function onEvent<T>(name: string, handler: (payload: T) => void): Promise<UnlistenFn> {
