@@ -30,6 +30,7 @@
 
   let messagesEl = $state<HTMLDivElement>();
   let inputEl = $state<HTMLTextAreaElement>();
+  let modelMenuOpen = $state(false);
 
   async function loadModels() {
     try {
@@ -47,8 +48,19 @@
     }
   }
 
-  function onModelChange() {
+  function persistModel() {
     if (selectedModel) localStorage.setItem(MODEL_STORAGE_KEY, selectedModel);
+  }
+
+  function toggleModelMenu(e: MouseEvent) {
+    e.stopPropagation();
+    modelMenuOpen = !modelMenuOpen;
+  }
+
+  function chooseModel(m: string) {
+    selectedModel = m;
+    persistModel();
+    modelMenuOpen = false;
   }
 
   function newChat() {
@@ -151,31 +163,41 @@
   }
 </script>
 
+<svelte:window onclick={() => (modelMenuOpen = false)} />
+
 {#if open}
   <div class="panel">
     <div class="header">
       <span
-        >AI Agent {#if !enabled}<span class="off">(disabled)</span>{/if}</span
+        >Cyber Bro {#if !enabled}<span class="off">(disabled)</span>{/if}</span
       >
       <div class="header-actions">
         {#if enabled && models.length > 0}
-          <select
-            class="model-select"
-            bind:value={selectedModel}
-            onchange={onModelChange}
-            title="Ollama model"
-          >
-            <option value="" disabled>choose a model…</option>
-            {#each models as m (m)}
-              <option value={m}>{m}</option>
-            {/each}
-          </select>
+          <div class="model-picker">
+            <button class="model-btn" onclick={toggleModelMenu} title="Choose Ollama model">
+              <span class="model-btn-label">{selectedModel || "choose a model…"}</span>
+              <span class="chevron" class:open={modelMenuOpen}>&#9662;</span>
+            </button>
+            {#if modelMenuOpen}
+              <div class="model-menu">
+                {#each models as m (m)}
+                  <button
+                    class="model-option"
+                    class:selected={m === selectedModel}
+                    onclick={() => chooseModel(m)}
+                  >
+                    {m}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {:else if enabled && modelsLoaded}
           <button class="icon-btn" onclick={loadModels} title="Retry loading models">&#8635;</button>
         {/if}
         {#if enabled}
           <button class="icon-btn" onclick={newChat} disabled={busy || messages.length === 0} title="New chat"
-            >&#9998; New</button
+            >&#9998;</button
           >
         {/if}
       </div>
@@ -231,7 +253,18 @@
             ? "Choose a model above first"
             : "Ask the AI agent… (Shift+Enter for a new line)"}
         rows="1"></textarea>
-      <button onclick={ask} disabled={!enabled || !selectedModel || busy}>Send</button>
+      <button
+        class="send-btn"
+        onclick={ask}
+        disabled={!enabled || !selectedModel || busy || !input.trim()}
+        title="Send"
+      >
+        {#if busy}
+          <span class="spinner"></span>
+        {:else}
+          <span class="send-icon">&#10148;</span>
+        {/if}
+      </button>
     </div>
   </div>
 {/if}
@@ -273,25 +306,91 @@
     color: var(--text-faint);
     font-weight: 400;
   }
-  .model-select {
-    max-width: 160px;
+  .model-picker {
+    position: relative;
+  }
+  .model-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 170px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--text);
     font-size: 11px;
     font-weight: 400;
-    padding: 3px 4px;
+    letter-spacing: normal;
+    padding: 4px 6px;
+  }
+  .model-btn:hover {
+    border-color: var(--accent-dim);
+  }
+  .model-btn-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .chevron {
+    font-size: 9px;
+    color: var(--text-faint);
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .chevron.open {
+    transform: rotate(180deg);
+  }
+  .model-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 100%;
+    max-width: 260px;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    padding: 4px;
+    z-index: 30;
+  }
+  .model-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 11.5px;
+    font-weight: 400;
+    letter-spacing: normal;
+    padding: 6px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .model-option:hover {
+    background: var(--border-soft);
+  }
+  .model-option.selected {
+    color: var(--accent);
+    background: rgba(57, 211, 83, 0.1);
   }
   .icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     background: transparent;
     border: none;
     color: var(--text-faint);
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 400;
     letter-spacing: normal;
-    white-space: nowrap;
-    padding: 3px 7px;
+    padding: 0;
     border-radius: 6px;
   }
   .icon-btn:hover:not(:disabled) {
@@ -404,7 +503,7 @@
   }
   .input-row {
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 6px;
     padding: 10px;
     border-top: 1px solid var(--border);
@@ -416,25 +515,53 @@
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text);
-    padding: 6px 8px;
+    padding: 7px 8px;
     font-family: var(--font-ui);
     font-size: 12px;
+    line-height: 1.4;
     max-height: 120px;
     overflow-y: auto;
+    box-sizing: border-box;
   }
-  button {
+  .send-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
     background: var(--accent-dim);
     color: #06170a;
     border: none;
     border-radius: 8px;
-    padding: 0 14px;
-    height: 30px;
-    font-weight: 600;
-    font-size: 12px;
-    flex-shrink: 0;
   }
-  button:disabled {
+  .send-btn:hover:not(:disabled) {
+    background: var(--accent);
+  }
+  .send-btn:disabled {
     background: var(--border);
     color: var(--text-faint);
+  }
+  .send-icon {
+    font-size: 13px;
+    transform: rotate(90deg);
+    line-height: 1;
+  }
+  .spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(6, 23, 10, 0.35);
+    border-top-color: #06170a;
+    animation: spin 0.7s linear infinite;
+  }
+  .send-btn:disabled .spinner {
+    border-color: rgba(255, 255, 255, 0.15);
+    border-top-color: var(--text-faint);
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>
