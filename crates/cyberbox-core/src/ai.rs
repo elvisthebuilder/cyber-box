@@ -9,11 +9,19 @@ pub enum AiEvent {
     Error(String),
 }
 
+/// One turn of prior conversation, sent back to Ollama's `/api/chat` on
+/// every request — the endpoint is stateless, so full history travels with
+/// each call, same as any OpenAI-style chat API.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
 #[derive(Serialize)]
-struct GenerateRequest<'a> {
+struct ChatRequest<'a> {
     model: &'a str,
-    prompt: &'a str,
-    system: &'a str,
+    messages: &'a [ChatMessage],
     stream: bool,
 }
 
@@ -27,10 +35,15 @@ it as what the user is currently looking at and reference it directly when it's 
 question — don't ignore it.";
 
 #[derive(Deserialize)]
-struct GenerateChunk {
-    response: Option<String>,
+struct ChatChunk {
+    message: Option<ChatChunkMessage>,
     #[serde(default)]
     done: bool,
+}
+
+#[derive(Deserialize)]
+struct ChatChunkMessage {
+    content: String,
 }
 
 #[derive(Deserialize)]
@@ -52,29 +65,41 @@ pub async fn list_models(ollama_url: &str) -> anyhow::Result<Vec<String>> {
     Ok(parsed.models.into_iter().map(|m| m.name).collect())
 }
 
-/// Sends `question` plus recent tool-output `context` to Ollama and streams
-/// the response back through `tx`. No-op unless called — the caller is
+/// Sends `history` (prior turns) plus a new `question` (with optional
+/// `context`, e.g. terminal output) to Ollama's `/api/chat` and streams the
+/// response back through `tx`. No-op unless called — the caller is
 /// responsible for gating this behind the AI-enabled toggle.
 pub fn ask(
     ollama_url: String,
     model: String,
+    history: Vec<ChatMessage>,
     question: String,
     context: String,
     tx: UnboundedSender<AiEvent>,
 ) {
     tokio::spawn(async move {
-        let prompt = if context.trim().is_empty() {
+        let user_content = if context.trim().is_empty() {
             question
         } else {
             format!("Attached terminal output:\n{context}\n\nUser question: {question}")
         };
 
+        let mut messages = Vec::with_capacity(history.len() + 2);
+        messages.push(ChatMessage {
+            role: "system".to_string(),
+            content: SYSTEM_PROMPT.to_string(),
+        });
+        messages.extend(history);
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: user_content,
+        });
+
         let client = reqwest::Client::new();
-        let url = format!("{}/api/generate", ollama_url.trim_end_matches('/'));
-        let body = GenerateRequest {
+        let url = format!("{}/api/chat", ollama_url.trim_end_matches('/'));
+        let body = ChatRequest {
             model: &model,
-            prompt: &prompt,
-            system: SYSTEM_PROMPT,
+            messages: &messages,
             stream: true,
         };
 
@@ -118,10 +143,12 @@ pub fn ask(
                 if line.trim().is_empty() {
                     continue;
                 }
-                match serde_json::from_str::<GenerateChunk>(&line) {
+                match serde_json::from_str::<ChatChunk>(&line) {
                     Ok(parsed) => {
-                        if let Some(text) = parsed.response {
-                            let _ = tx.send(AiEvent::Token(text));
+                        if let Some(msg) = parsed.message {
+                            if !msg.content.is_empty() {
+                                let _ = tx.send(AiEvent::Token(msg.content));
+                            }
                         }
                         if parsed.done {
                             let _ = tx.send(AiEvent::Done);

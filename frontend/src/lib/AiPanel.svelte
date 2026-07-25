@@ -29,6 +29,37 @@
     }
   });
 
+  // Raw code text for each rendered code block, keyed by a fresh id per
+  // render — read by the click-delegation handler below so a copy button
+  // can grab the exact command text without re-parsing the DOM. Harmless if
+  // stale entries pile up across a streaming re-render; only the ids
+  // actually present in the current DOM are ever clickable.
+  const codeBlocks: Record<string, string> = {};
+  const COPY_ICON =
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.486 6.2H7.24795C6.66895 6.2 6.19995 6.669 6.19995 7.248V12.486C6.19995 13.064 6.66895 13.533 7.24795 13.533H12.486C13.064 13.533 13.533 13.064 13.533 12.486V7.248C13.533 6.669 13.064 6.2 12.486 6.2Z M3.91712 10.203C3.63951 10.2022 3.37351 10.0915 3.1773 9.89511C2.98109 9.69872 2.87064 9.43261 2.87012 9.155V3.917C2.87091 3.63956 2.98147 3.37371 3.17765 3.17753C3.37383 2.98135 3.63968 2.87079 3.91712 2.87H9.15512C9.43273 2.87053 9.69883 2.98097 9.89523 3.17718C10.0916 3.37339 10.2023 3.63939 10.2031 3.917"/></svg>';
+  const CHECK_ICON =
+    '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.625 8.98121L7.03402 10.7714L11.3437 4.75989"/></svg>';
+
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  marked.use({
+    renderer: {
+      code({ text, lang }) {
+        const id = crypto.randomUUID();
+        codeBlocks[id] = text;
+        const langClass = lang ? ` class="language-${escapeHtml(lang.split(/\s/)[0])}"` : "";
+        return (
+          `<div class="code-block">` +
+          `<button type="button" class="code-copy-btn" data-code-id="${id}" title="Copy command">${COPY_ICON}</button>` +
+          `<pre><code${langClass}>${escapeHtml(text)}</code></pre>` +
+          `</div>`
+        );
+      },
+    },
+  });
+
   /** Renders AI markdown to sanitized HTML — the source may embed untrusted
    * terminal output via prompt injection, so this never trusts the model's
    * output directly. */
@@ -59,8 +90,46 @@
         "a",
         "hr",
         "del",
+        "div",
+        "button",
+        "svg",
+        "path",
       ],
-      ALLOWED_ATTR: ["href"],
+      ALLOWED_ATTR: [
+        "href",
+        "class",
+        "type",
+        "title",
+        "data-code-id",
+        "viewBox",
+        "width",
+        "height",
+        "fill",
+        "stroke",
+        "stroke-width",
+        "stroke-linecap",
+        "stroke-linejoin",
+        "d",
+      ],
+    });
+  }
+
+  /** Delegated click handler for the copy buttons injected into code
+   * blocks by the marked renderer above (they're raw HTML, not Svelte
+   * elements, so they can't have their own onclick binding). */
+  function onMessagesClick(e: MouseEvent) {
+    const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(".code-copy-btn");
+    if (!btn) return;
+    const id = btn.dataset.codeId;
+    const code = id ? codeBlocks[id] : undefined;
+    if (code === undefined) return;
+    navigator.clipboard.writeText(code).then(() => {
+      btn.innerHTML = CHECK_ICON;
+      btn.classList.add("copied");
+      setTimeout(() => {
+        btn.innerHTML = COPY_ICON;
+        btn.classList.remove("copied");
+      }, 1200);
     });
   }
 
@@ -185,7 +254,7 @@
         unToken = t;
         unDone = d;
         unErr = e;
-        api.askAi(requestId, model, question, context).catch(reject);
+        api.askAi(requestId, model, [], question, context).catch(reject);
       });
     });
   }
@@ -259,6 +328,16 @@
     input = "";
     await tick();
     autosize();
+
+    // Real multi-turn memory: every prior turn goes back to Ollama's
+    // /api/chat, not just the current question — it's stateless per
+    // request, so the full history travels with each call. Error bubbles
+    // and the not-yet-answered placeholder are excluded so they don't
+    // confuse the model.
+    const history = messages
+      .filter((m) => m.text.trim() && !m.text.startsWith("[error]"))
+      .map((m) => ({ role: m.role, content: m.text }));
+
     messages = [
       ...messages,
       { id: crypto.randomUUID(), role: "user", text: question },
@@ -293,7 +372,7 @@
       unErr();
     });
 
-    api.askAi(requestId, selectedModel, question, context).catch(() => {
+    api.askAi(requestId, selectedModel, history, question, context).catch(() => {
       busy = false;
     });
   }
@@ -362,7 +441,10 @@
       {/if}
     </div>
 
-    <div class="messages" bind:this={messagesEl}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- click-delegates to the .code-copy-btn buttons rendered inside; the div itself isn't interactive -->
+    <div class="messages" bind:this={messagesEl} onclick={onMessagesClick}>
       {#if !enabled}
         <div class="hint">AI suggestions are off. Toggle them from the status bar.</div>
       {:else if !selectedModel}
@@ -680,7 +762,9 @@
   /* assistant message: bare flowing text, no box, wider gutter */
   .msg.assistant {
     position: relative;
-    padding: 6px 20px;
+    /* extra top padding reserves a strip for the message-level copy button
+       so it never overlaps a leading code block's own copy button */
+    padding: 22px 20px 6px;
   }
   .msg.assistant .text {
     color: var(--text);
@@ -786,8 +870,12 @@
     border-radius: 4px;
     padding: 1px 4px;
   }
-  .markdown :global(pre) {
+  .markdown :global(.code-block) {
+    position: relative;
     margin: 4px 0 8px;
+  }
+  .markdown :global(pre) {
+    margin: 0;
     padding: 8px 10px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
@@ -799,6 +887,34 @@
     border: none;
     padding: 0;
     white-space: pre;
+  }
+  .markdown :global(.code-copy-btn) {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-faint);
+    padding: 0;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.1s;
+  }
+  .markdown :global(.code-block:hover .code-copy-btn) {
+    opacity: 1;
+  }
+  .markdown :global(.code-copy-btn:hover) {
+    color: var(--text);
+    background: var(--border-soft);
+  }
+  .markdown :global(.code-copy-btn.copied) {
+    color: var(--accent);
+    opacity: 1;
   }
   .markdown :global(table) {
     width: 100%;

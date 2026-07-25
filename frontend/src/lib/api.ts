@@ -8,6 +8,11 @@ export interface Tab {
   path?: string;
 }
 
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 export interface ToolInfo {
   name: string;
   category: string;
@@ -41,8 +46,8 @@ export const api = {
   ptyClose: (id: string) => invoke<void>("pty_close", { id }),
   ptyCwd: (id: string) => invoke<string>("pty_cwd", { id }),
   listOllamaModels: () => invoke<string[]>("list_ollama_models"),
-  askAi: (requestId: string, model: string, question: string, context: string) =>
-    invoke<void>("ask_ai", { requestId, model, question, context }),
+  askAi: (requestId: string, model: string, history: ChatMessage[], question: string, context: string) =>
+    invoke<void>("ask_ai", { requestId, model, history, question, context }),
 };
 
 export function onEvent<T>(name: string, handler: (payload: T) => void): Promise<UnlistenFn> {

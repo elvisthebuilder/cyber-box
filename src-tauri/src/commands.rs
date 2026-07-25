@@ -364,6 +364,7 @@ pub async fn ask_ai(
     state: State<'_, AppState>,
     request_id: String,
     model: String,
+    history: Vec<ai::ChatMessage>,
     question: String,
     context: String,
 ) -> Result<(), String> {
@@ -371,6 +372,7 @@ pub async fn ask_ai(
     ai::ask(
         state.config.ollama_url.clone(),
         model,
+        history,
         question,
         context,
         tx,
