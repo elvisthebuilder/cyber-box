@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { api, onEvent } from "./api";
+  import Icon from "./Icon.svelte";
 
   let { open, enabled, getContext }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
 
@@ -176,7 +177,7 @@
           <div class="model-picker">
             <button class="model-btn" onclick={toggleModelMenu} title="Choose Ollama model">
               <span class="model-btn-label">{selectedModel || "choose a model…"}</span>
-              <span class="chevron" class:open={modelMenuOpen}>&#9662;</span>
+              <span class="chevron" class:open={modelMenuOpen}><Icon name="chevron-down" size={11} /></span>
             </button>
             {#if modelMenuOpen}
               <div class="model-menu">
@@ -193,11 +194,13 @@
             {/if}
           </div>
         {:else if enabled && modelsLoaded}
-          <button class="icon-btn" onclick={loadModels} title="Retry loading models">&#8635;</button>
+          <button class="icon-btn" onclick={loadModels} title="Retry loading models"
+            ><Icon name="rotate-ccw" /></button
+          >
         {/if}
         {#if enabled}
           <button class="icon-btn" onclick={newChat} disabled={busy || messages.length === 0} title="New chat"
-            >&#9998;</button
+            ><Icon name="plus" /></button
           >
         {/if}
       </div>
@@ -220,7 +223,7 @@
             <span class="role">{m.role === "user" ? "you" : "ai"}</span>
             {#if m.role === "assistant" && m.text}
               <button class="copy-btn" onclick={() => copyMessage(m)} title="Copy response">
-                {copiedId === m.id ? "copied" : "copy"}
+                <Icon name={copiedId === m.id ? "check" : "copy"} size={12} />
               </button>
             {/if}
           </div>
@@ -251,7 +254,7 @@
           ? "AI is disabled"
           : !selectedModel
             ? "Choose a model above first"
-            : "Ask the AI agent… (Shift+Enter for a new line)"}
+            : "Ask Cyber Bro… (Shift+Enter for a new line)"}
         rows="1"></textarea>
       <button
         class="send-btn"
@@ -262,7 +265,7 @@
         {#if busy}
           <span class="spinner"></span>
         {:else}
-          <span class="send-icon">&#10148;</span>
+          <Icon name="send" size={14} />
         {/if}
       </button>
     </div>
@@ -332,9 +335,9 @@
     white-space: nowrap;
   }
   .chevron {
-    font-size: 9px;
+    display: flex;
     color: var(--text-faint);
-    transition: transform 0.1s;
+    transition: transform 0.15s;
     flex-shrink: 0;
   }
   .chevron.open {
@@ -428,11 +431,15 @@
     color: var(--text-faint);
   }
   .copy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
     background: transparent;
     border: none;
     color: var(--text-faint);
-    font-size: 10px;
-    padding: 0 4px;
+    padding: 0;
     border-radius: 4px;
     opacity: 0;
     transition: opacity 0.1s;
@@ -541,11 +548,6 @@
   .send-btn:disabled {
     background: var(--border);
     color: var(--text-faint);
-  }
-  .send-icon {
-    font-size: 13px;
-    transform: rotate(90deg);
-    line-height: 1;
   }
   .spinner {
     width: 12px;
