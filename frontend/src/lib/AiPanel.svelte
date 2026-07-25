@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { api, onEvent } from "./api";
   import Icon from "./Icon.svelte";
+  import CircularProgress from "./CircularProgress.svelte";
 
   let { open, enabled, getContext }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
 
@@ -35,9 +36,11 @@
 
   // Context attachment — mirrors Zed's "add context" chip: shows what will
   // be sent alongside the question, toggleable per-message.
+  const CONTEXT_MAX_LINES = 200; // matches TerminalView.getBufferText()'s default cap
   let contextEnabled = $state(true);
   let contextLines = $state(0);
   let contextPollTimer: ReturnType<typeof setInterval> | undefined;
+  const contextRatio = $derived(contextEnabled ? contextLines / CONTEXT_MAX_LINES : 0);
 
   function refreshContextPreview() {
     const ctx = getContext();
@@ -281,27 +284,42 @@
         >Cyber Bro {#if !enabled}<span class="off">(disabled)</span>{/if}</span
       >
       {#if enabled}
-        <div class="new-chat-picker">
-          <button
-            class="icon-btn"
-            onclick={messages.length > 0 ? toggleNewChatMenu : newChat}
-            disabled={busy || summarizing || messages.length === 0}
-            title="New chat"
+        <div class="header-actions">
+          <span
+            class="context-ring"
+            title={contextEnabled
+              ? `Terminal context: ${contextLines}/${CONTEXT_MAX_LINES} lines`
+              : "Terminal context excluded"}
           >
-            {#if summarizing}
-              <span class="spinner muted"></span>
-            {:else}
-              <Icon name="plus" />
+            <CircularProgress
+              progress={contextRatio}
+              size={15}
+              strokeWidth={2}
+              color={contextRatio >= 0.85 ? "var(--warn)" : "var(--text-faint)"}
+            />
+          </span>
+          <div class="new-chat-picker">
+            <button
+              class="icon-btn"
+              onclick={messages.length > 0 ? toggleNewChatMenu : newChat}
+              disabled={busy || summarizing || messages.length === 0}
+              title="New chat"
+            >
+              {#if summarizing}
+                <span class="spinner muted"></span>
+              {:else}
+                <Icon name="plus" />
+              {/if}
+            </button>
+            {#if newChatMenuOpen}
+              <div class="new-chat-menu">
+                <button class="menu-option" onclick={newChat}>New chat</button>
+                <button class="menu-option" onclick={newChatFromSummary} disabled={!selectedModel}>
+                  New chat from summary
+                </button>
+              </div>
             {/if}
-          </button>
-          {#if newChatMenuOpen}
-            <div class="new-chat-menu">
-              <button class="menu-option" onclick={newChat}>New chat</button>
-              <button class="menu-option" onclick={newChatFromSummary} disabled={!selectedModel}>
-                New chat from summary
-              </button>
-            </div>
-          {/if}
+          </div>
         </div>
       {/if}
     </div>
@@ -499,6 +517,18 @@
     opacity: 0.4;
   }
 
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .context-ring {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+  }
   .new-chat-picker {
     position: relative;
   }
