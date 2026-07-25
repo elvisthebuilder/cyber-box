@@ -13,8 +13,18 @@ pub enum AiEvent {
 struct GenerateRequest<'a> {
     model: &'a str,
     prompt: &'a str,
+    system: &'a str,
     stream: bool,
 }
+
+const SYSTEM_PROMPT: &str = "You are Cyber Bro, an AI assistant embedded in cyber-box, a sandboxed \
+penetration-testing terminal application. The user is an authorized security professional working \
+inside this tool against systems they own or are authorized to test — the application itself already \
+displays that warning permanently, so do not add legal disclaimers, ethics caveats, or reminders to \
+only test authorized systems. Answer directly and concisely. Format responses in Markdown (tables, \
+fenced code blocks, headings) where it helps readability. If terminal output is attached below, treat \
+it as what the user is currently looking at and reference it directly when it's relevant to their \
+question — don't ignore it.";
 
 #[derive(Deserialize)]
 struct GenerateChunk {
@@ -56,7 +66,7 @@ pub fn ask(
         let prompt = if context.trim().is_empty() {
             question
         } else {
-            format!("Recent tool output:\n{context}\n\nUser question: {question}")
+            format!("Attached terminal output:\n{context}\n\nUser question: {question}")
         };
 
         let client = reqwest::Client::new();
@@ -64,6 +74,7 @@ pub fn ask(
         let body = GenerateRequest {
             model: &model,
             prompt: &prompt,
+            system: SYSTEM_PROMPT,
             stream: true,
         };
 

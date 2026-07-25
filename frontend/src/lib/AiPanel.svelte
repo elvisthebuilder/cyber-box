@@ -1,10 +1,17 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from "svelte";
+  import { marked } from "marked";
+  import DOMPurify from "dompurify";
   import { api, onEvent } from "./api";
   import Icon from "./Icon.svelte";
   import CircularProgress from "./CircularProgress.svelte";
 
-  let { open, enabled, getContext }: { open: boolean; enabled: boolean; getContext: () => string } = $props();
+  let {
+    open,
+    enabled,
+    activeIsTerminal,
+    getContext,
+  }: { open: boolean; enabled: boolean; activeIsTerminal: boolean; getContext: () => string } = $props();
 
   interface Message {
     id: string;
@@ -12,13 +19,50 @@
     text: string;
   }
 
-  interface Segment {
-    kind: "text" | "code";
-    content: string;
-    lang?: string;
-  }
-
   const MODEL_STORAGE_KEY = "cyberbox-ai-model";
+
+  marked.setOptions({ gfm: true, breaks: true });
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+    }
+  });
+
+  /** Renders AI markdown to sanitized HTML — the source may embed untrusted
+   * terminal output via prompt injection, so this never trusts the model's
+   * output directly. */
+  function renderMarkdown(text: string): string {
+    const html = marked.parse(text, { async: false }) as string;
+    return DOMPurify.sanitize(html, {
+      ALLOWED_TAGS: [
+        "p",
+        "br",
+        "strong",
+        "em",
+        "code",
+        "pre",
+        "ul",
+        "ol",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "blockquote",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "a",
+        "hr",
+        "del",
+      ],
+      ALLOWED_ATTR: ["href"],
+    });
+  }
 
   let messages = $state<Message[]>([]);
   let input = $state("");
@@ -35,16 +79,22 @@
   let modelMenuOpen = $state(false);
 
   // Context attachment — mirrors Zed's "add context" chip: shows what will
-  // be sent alongside the question, toggleable per-message.
-  const CONTEXT_MAX_LINES = 200; // matches TerminalView.getBufferText()'s default cap
+  // be sent alongside the question, toggleable per-message. The ring tracks
+  // an estimated token count (chars/4, the standard rough heuristic — Ollama
+  // doesn't expose these cloud-proxied models' real context window to us)
+  // against a generous budget, so normal use doesn't pin it at "full".
+  const CONTEXT_TOKEN_BUDGET = 6000;
   let contextEnabled = $state(true);
   let contextLines = $state(0);
+  let contextChars = $state(0);
   let contextPollTimer: ReturnType<typeof setInterval> | undefined;
-  const contextRatio = $derived(contextEnabled ? contextLines / CONTEXT_MAX_LINES : 0);
+  const contextTokensEstimate = $derived(Math.round(contextChars / 4));
+  const contextRatio = $derived(contextEnabled ? contextTokensEstimate / CONTEXT_TOKEN_BUDGET : 0);
 
   function refreshContextPreview() {
     const ctx = getContext();
     contextLines = ctx.trim() ? ctx.split("\n").length : 0;
+    contextChars = ctx.length;
   }
 
   // "New chat from summary" — mirrors Zed's New From Summary: summarize the
@@ -102,6 +152,7 @@
     messages = [];
     carriedSummary = "";
     summaryError = "";
+    contextEnabled = true;
     tick().then(() => inputEl?.focus());
   }
 
@@ -163,21 +214,6 @@
     } finally {
       summarizing = false;
     }
-  }
-
-  /** Splits AI output on ```fenced``` code blocks so commands render in monospace. */
-  function segments(text: string): Segment[] {
-    const parts: Segment[] = [];
-    const re = /```(\w+)?\n?([\s\S]*?)```/g;
-    let last = 0;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(text))) {
-      if (match.index > last) parts.push({ kind: "text", content: text.slice(last, match.index) });
-      parts.push({ kind: "code", content: match[2].replace(/\n$/, ""), lang: match[1] });
-      last = match.index + match[0].length;
-    }
-    if (last < text.length) parts.push({ kind: "text", content: text.slice(last) });
-    return parts;
   }
 
   async function copyMessage(m: Message) {
@@ -287,9 +323,11 @@
         <div class="header-actions">
           <span
             class="context-ring"
-            title={contextEnabled
-              ? `Terminal context: ${contextLines}/${CONTEXT_MAX_LINES} lines`
-              : "Terminal context excluded"}
+            title={!contextEnabled
+              ? "Terminal context excluded"
+              : !activeIsTerminal
+                ? "No terminal tab active — nothing will be attached"
+                : `~${contextTokensEstimate} tokens attached (${contextLines} lines) of a ${CONTEXT_TOKEN_BUDGET} budget`}
           >
             <CircularProgress
               progress={contextRatio}
@@ -346,15 +384,7 @@
       {#each messages as m, i (m.id)}
         {#if m.role === "user"}
           <div class="msg user">
-            <div class="text">
-              {#each segments(m.text) as seg, si (si)}
-                {#if seg.kind === "code"}
-                  <pre class="code">{seg.content}</pre>
-                {:else}
-                  {seg.content}
-                {/if}
-              {/each}
-            </div>
+            <div class="text">{m.text}</div>
           </div>
         {:else}
           <div class="msg assistant">
@@ -366,15 +396,8 @@
                   <Icon name={copiedId === m.id ? "check" : "copy"} size={12} />
                 </button>
               {/if}
-              <div class="text">
-                {#each segments(m.text) as seg, si (si)}
-                  {#if seg.kind === "code"}
-                    <pre class="code">{seg.content}</pre>
-                  {:else}
-                    {seg.content}
-                  {/if}
-                {/each}
-              </div>
+              <!-- eslint-disable-next-line svelte/no-at-html-tags -- renderMarkdown() runs the model's output through DOMPurify.sanitize() with a strict allowlist before this ever reaches @html -->
+              <div class="text markdown">{@html renderMarkdown(m.text)}</div>
             {/if}
           </div>
         {/if}
@@ -400,13 +423,20 @@
             <button
               class="context-chip"
               class:off={!contextEnabled}
+              class:missing={activeIsTerminal === false}
               onclick={() => (contextEnabled = !contextEnabled)}
-              title={contextEnabled
-                ? "Terminal output is attached as context — click to exclude it from the next message"
-                : "Terminal context excluded — click to include it again"}
+              title={!activeIsTerminal
+                ? "The active tab isn't a terminal — nothing will be attached. Switch to a terminal tab first."
+                : contextEnabled
+                  ? "Terminal output is attached as context — click to exclude it from the next message"
+                  : "Terminal context excluded — click to include it again"}
             >
               <span class="context-dot"></span>
-              {contextEnabled && contextLines > 0 ? `Terminal · ${contextLines}` : "Terminal"}
+              {!activeIsTerminal
+                ? "No terminal active"
+                : contextEnabled && contextLines > 0
+                  ? `Terminal · ${contextLines}`
+                  : "Terminal"}
             </button>
           {/if}
         </div>
@@ -613,6 +643,12 @@
   .context-chip.off .context-dot {
     background: var(--text-faint);
   }
+  .context-chip.missing {
+    color: var(--warn);
+  }
+  .context-chip.missing .context-dot {
+    background: var(--warn);
+  }
 
   .messages {
     flex: 1;
@@ -682,22 +718,104 @@
     white-space: pre-wrap;
     word-break: break-word;
   }
-  .code {
-    display: block;
-    margin: 4px 0;
+  /* rendered HTML already carries its own block spacing/newlines */
+  .text.markdown {
+    white-space: normal;
+  }
+  /* markdown renders assistant messages via {@html}, so these target the
+     injected DOM directly rather than Svelte-scoped elements. */
+  .markdown :global(p) {
+    margin: 0 0 8px;
+  }
+  .markdown :global(p:last-child) {
+    margin-bottom: 0;
+  }
+  .markdown :global(strong) {
+    font-weight: 700;
+    color: var(--text);
+  }
+  .markdown :global(h1),
+  .markdown :global(h2),
+  .markdown :global(h3),
+  .markdown :global(h4) {
+    margin: 12px 0 6px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .markdown :global(h1) {
+    font-size: 15px;
+  }
+  .markdown :global(h2) {
+    font-size: 14px;
+  }
+  .markdown :global(h3),
+  .markdown :global(h4) {
+    font-size: 12.5px;
+  }
+  .markdown :global(ul),
+  .markdown :global(ol) {
+    margin: 0 0 8px;
+    padding-left: 20px;
+  }
+  .markdown :global(li) {
+    margin: 2px 0;
+  }
+  .markdown :global(li > p) {
+    margin: 0;
+  }
+  .markdown :global(a) {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .markdown :global(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 10px 0;
+  }
+  .markdown :global(blockquote) {
+    margin: 0 0 8px;
+    padding: 4px 10px;
+    border-left: 2px solid var(--border);
+    color: var(--text-dim);
+  }
+  .markdown :global(code) {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+  .markdown :global(pre) {
+    margin: 4px 0 8px;
     padding: 8px 10px;
     background: var(--bg-elevated);
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    color: var(--text);
-    white-space: pre-wrap;
-    word-break: break-word;
     overflow-x: auto;
   }
-  .msg.user .code {
+  .markdown :global(pre code) {
+    background: transparent;
+    border: none;
+    padding: 0;
+    white-space: pre;
+  }
+  .markdown :global(table) {
+    width: 100%;
+    margin: 4px 0 8px;
+    border-collapse: collapse;
+    font-size: 11.5px;
+  }
+  .markdown :global(th),
+  .markdown :global(td) {
+    text-align: left;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+  }
+  .markdown :global(th) {
     background: var(--bg-elevated);
+    color: var(--text-dim);
+    font-weight: 600;
   }
 
   .thinking {

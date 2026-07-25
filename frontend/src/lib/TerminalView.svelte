@@ -67,7 +67,7 @@
     }
   });
 
-  export function getBufferText(maxLines = 200): string {
+  export function getBufferText(maxLines = 500): string {
     if (!term) return "";
     const buf = term.buffer.active;
     const start = Math.max(0, buf.length - maxLines);

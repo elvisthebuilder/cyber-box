@@ -114,6 +114,7 @@
       <AiPanel
         open={aiOpen}
         enabled={aiEnabled}
+        activeIsTerminal={tabs.find((t) => t.id === activeId)?.kind === "terminal"}
         getContext={() => termRefs[activeId]?.getBufferText() ?? ""}
       />
     </div>
