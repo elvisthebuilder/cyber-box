@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import { api, onEvent } from "./api";
   import Icon from "./Icon.svelte";
 
@@ -32,6 +32,25 @@
   let messagesEl = $state<HTMLDivElement>();
   let inputEl = $state<HTMLTextAreaElement>();
   let modelMenuOpen = $state(false);
+
+  // Context attachment — mirrors Zed's "add context" chip: shows what will
+  // be sent alongside the question, toggleable per-message.
+  let contextEnabled = $state(true);
+  let contextLines = $state(0);
+  let contextPollTimer: ReturnType<typeof setInterval> | undefined;
+
+  function refreshContextPreview() {
+    const ctx = getContext();
+    contextLines = ctx.trim() ? ctx.split("\n").length : 0;
+  }
+
+  // "New chat from summary" — mirrors Zed's New From Summary: summarize the
+  // current thread with the model, then start fresh with that summary
+  // carried forward as context instead of losing it outright.
+  let newChatMenuOpen = $state(false);
+  let summarizing = $state(false);
+  let summaryError = $state("");
+  let carriedSummary = $state("");
 
   async function loadModels() {
     try {
@@ -68,10 +87,79 @@
     modelMenuOpen = false;
   }
 
+  function toggleNewChatMenu(e: MouseEvent) {
+    e.stopPropagation();
+    if (messages.length === 0) return;
+    newChatMenuOpen = !newChatMenuOpen;
+  }
+
   function newChat() {
-    if (busy) return;
+    if (busy || summarizing) return;
+    newChatMenuOpen = false;
     messages = [];
+    carriedSummary = "";
+    summaryError = "";
     tick().then(() => inputEl?.focus());
+  }
+
+  /** Streams one request to completion and resolves with the full text, without touching `messages`. */
+  function runOnce(model: string, question: string, context: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const requestId = crypto.randomUUID();
+      let text = "";
+      let unToken: () => void = () => {};
+      let unDone: () => void = () => {};
+      let unErr: () => void = () => {};
+
+      Promise.all([
+        onEvent<string>(`ai:${requestId}:token`, (t) => {
+          text += t;
+        }),
+        onEvent<void>(`ai:${requestId}:done`, () => {
+          unToken();
+          unDone();
+          unErr();
+          resolve(text);
+        }),
+        onEvent<string>(`ai:${requestId}:error`, (e) => {
+          unToken();
+          unDone();
+          unErr();
+          reject(new Error(e));
+        }),
+      ]).then(([t, d, e]) => {
+        unToken = t;
+        unDone = d;
+        unErr = e;
+        api.askAi(requestId, model, question, context).catch(reject);
+      });
+    });
+  }
+
+  async function newChatFromSummary() {
+    if (busy || summarizing || !selectedModel || messages.length === 0) return;
+    newChatMenuOpen = false;
+    summarizing = true;
+    summaryError = "";
+    const transcript = messages
+      .filter((m) => m.text.trim())
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`)
+      .join("\n\n");
+    const prompt =
+      "Summarize the key points, conclusions, and any commands or findings from this conversation " +
+      "in 2-4 concise sentences, so it can be carried into a new chat as context. Reply with only " +
+      `the summary, no preamble.\n\n${transcript}`;
+    try {
+      const summary = await runOnce(selectedModel, prompt, "");
+      carriedSummary = summary.trim();
+      messages = [];
+      scrollToBottom();
+      tick().then(() => inputEl?.focus());
+    } catch (e) {
+      summaryError = `Couldn't summarize: ${e}`;
+    } finally {
+      summarizing = false;
+    }
   }
 
   /** Splits AI output on ```fenced``` code blocks so commands render in monospace. */
@@ -110,16 +198,24 @@
 
   onMount(() => {
     loadModels();
+    contextPollTimer = setInterval(() => {
+      if (open) refreshContextPreview();
+    }, 2000);
+  });
+
+  onDestroy(() => {
+    if (contextPollTimer) clearInterval(contextPollTimer);
   });
 
   $effect(() => {
     if (open) {
       tick().then(() => inputEl?.focus());
+      refreshContextPreview();
     }
   });
 
   async function ask() {
-    if (!enabled || busy || !selectedModel || !input.trim()) return;
+    if (!enabled || busy || summarizing || !selectedModel || !input.trim()) return;
     const question = input.trim();
     input = "";
     await tick();
@@ -133,7 +229,10 @@
     scrollToBottom();
 
     const requestId = crypto.randomUUID();
-    const context = getContext();
+    const liveContext = contextEnabled ? getContext() : "";
+    const context = carriedSummary
+      ? `Summary of earlier conversation:\n${carriedSummary}\n\n${liveContext}`
+      : liveContext;
 
     const unToken = await onEvent<string>(`ai:${requestId}:token`, (t) => {
       const last = messages[messages.length - 1];
@@ -168,7 +267,12 @@
   }
 </script>
 
-<svelte:window onclick={() => (modelMenuOpen = false)} />
+<svelte:window
+  onclick={() => {
+    modelMenuOpen = false;
+    newChatMenuOpen = false;
+  }}
+/>
 
 {#if open}
   <div class="panel">
@@ -177,9 +281,28 @@
         >Cyber Bro {#if !enabled}<span class="off">(disabled)</span>{/if}</span
       >
       {#if enabled}
-        <button class="icon-btn" onclick={newChat} disabled={busy || messages.length === 0} title="New chat">
-          <Icon name="plus" />
-        </button>
+        <div class="new-chat-picker">
+          <button
+            class="icon-btn"
+            onclick={messages.length > 0 ? toggleNewChatMenu : newChat}
+            disabled={busy || summarizing || messages.length === 0}
+            title="New chat"
+          >
+            {#if summarizing}
+              <span class="spinner muted"></span>
+            {:else}
+              <Icon name="plus" />
+            {/if}
+          </button>
+          {#if newChatMenuOpen}
+            <div class="new-chat-menu">
+              <button class="menu-option" onclick={newChat}>New chat</button>
+              <button class="menu-option" onclick={newChatFromSummary} disabled={!selectedModel}>
+                New chat from summary
+              </button>
+            </div>
+          {/if}
+        </div>
       {/if}
     </div>
 
@@ -190,8 +313,17 @@
         <div class="hint">
           Pick a model below, then ask about the active terminal's output or anything else.
         </div>
-      {:else if messages.length === 0}
+      {:else if messages.length === 0 && !carriedSummary}
         <div class="hint">Ask about the active terminal's output, a tool, or anything else.</div>
+      {/if}
+      {#if summaryError}
+        <div class="hint error">{summaryError}</div>
+      {/if}
+      {#if carriedSummary}
+        <div class="summary-banner">
+          <Icon name="rotate-ccw" size={11} />
+          <span>{carriedSummary}</span>
+        </div>
       {/if}
       {#each messages as m, i (m.id)}
         {#if m.role === "user"}
@@ -237,7 +369,7 @@
         bind:value={input}
         onkeydown={onKeydown}
         oninput={autosize}
-        disabled={!enabled || !selectedModel}
+        disabled={!enabled || !selectedModel || summarizing}
         placeholder={!enabled
           ? "AI is disabled"
           : !selectedModel
@@ -245,7 +377,21 @@
             : "Ask Cyber Bro… (Shift+Enter for a new line)"}
         rows="1"></textarea>
       <div class="composer-toolbar">
-        <div class="toolbar-left"></div>
+        <div class="toolbar-left">
+          {#if enabled && selectedModel}
+            <button
+              class="context-chip"
+              class:off={!contextEnabled}
+              onclick={() => (contextEnabled = !contextEnabled)}
+              title={contextEnabled
+                ? "Terminal output is attached as context — click to exclude it from the next message"
+                : "Terminal context excluded — click to include it again"}
+            >
+              <span class="context-dot"></span>
+              {contextEnabled && contextLines > 0 ? `Terminal · ${contextLines}` : "Terminal"}
+            </button>
+          {/if}
+        </div>
         <div class="toolbar-right">
           {#if enabled && modelsLoaded}
             <div class="model-picker">
@@ -280,7 +426,7 @@
           <button
             class="send-btn"
             onclick={ask}
-            disabled={!enabled || !selectedModel || busy || !input.trim()}
+            disabled={!enabled || !selectedModel || busy || summarizing || !input.trim()}
             title="Send"
           >
             {#if busy}
@@ -351,6 +497,91 @@
   }
   .icon-btn:disabled {
     opacity: 0.4;
+  }
+
+  .new-chat-picker {
+    position: relative;
+  }
+  .new-chat-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 170px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    padding: 4px;
+    z-index: 30;
+  }
+  .menu-option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 11.5px;
+    font-weight: 400;
+    padding: 6px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+  .menu-option:hover:not(:disabled) {
+    background: var(--border-soft);
+  }
+  .menu-option:disabled {
+    color: var(--text-faint);
+    opacity: 0.5;
+  }
+
+  .summary-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 4px 12px 8px;
+    padding: 8px 10px;
+    background: var(--border-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+  .summary-banner :global(svg) {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--text-faint);
+  }
+
+  .context-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--text-faint);
+    font-size: 10.5px;
+    padding: 3px 6px;
+  }
+  .context-chip:hover {
+    background: var(--border-soft);
+    color: var(--text-dim);
+  }
+  .context-chip.off {
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+  .context-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .context-chip.off .context-dot {
+    background: var(--text-faint);
   }
 
   .messages {
@@ -621,6 +852,10 @@
   }
   .send-btn:disabled .spinner {
     border-color: rgba(255, 255, 255, 0.15);
+    border-top-color: var(--text-faint);
+  }
+  .spinner.muted {
+    border-color: var(--border);
     border-top-color: var(--text-faint);
   }
   @keyframes spin {
