@@ -8,16 +8,19 @@
     onInsertText,
     onOpenFile,
     activeTabId,
+    collapsed = false,
   }: {
     onInsertText: (text: string, run: boolean) => void;
     onOpenFile: (path: string) => void;
     activeTabId: string;
+    collapsed?: boolean;
   } = $props();
 
   let tools = $state<ToolInfo[]>([]);
   let activeTab = $state<"tools" | "files">("tools");
   let expandedCategories = $state<Set<string>>(new Set());
   let installingLog = $state<Record<string, string[]>>({});
+  let toolSearch = $state("");
 
   const unlisteners: (() => void)[] = [];
 
@@ -28,6 +31,26 @@
       map.get(t.category)!.push(t);
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }
+
+  function filteredCategories() {
+    const q = toolSearch.trim().toLowerCase();
+    if (!q) return categories();
+    return categories()
+      .map(
+        ([cat, catTools]) =>
+          [
+            cat,
+            catTools.filter(
+              (t) => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q),
+            ),
+          ] as [string, ToolInfo[]],
+      )
+      .filter(([, catTools]) => catTools.length > 0);
+  }
+
+  function isCategoryOpen(cat: string) {
+    return toolSearch.trim() ? true : expandedCategories.has(cat);
   }
 
   function toggleCategory(cat: string) {
@@ -83,6 +106,33 @@
   let cwd = $state("/");
   let fsRoot = $state<FileNode>({ path: "/", name: "/", isDir: true, expanded: true });
   let cwdPollTimer: ReturnType<typeof setInterval> | undefined;
+  let fileSearch = $state("");
+
+  function nodeMatches(node: FileNode, q: string): boolean {
+    if (node.name.toLowerCase().includes(q)) return true;
+    return node.children?.some((c) => nodeMatches(c, q)) ?? false;
+  }
+
+  /** Filters the already-loaded tree in place (doesn't fetch unexplored
+   * folders), force-expanding any directory that contains a match. */
+  function filterTree(nodes: FileNode[], q: string): FileNode[] {
+    const out: FileNode[] = [];
+    for (const node of nodes) {
+      if (!nodeMatches(node, q)) continue;
+      out.push(
+        node.isDir && node.children
+          ? { ...node, expanded: true, children: filterTree(node.children, q) }
+          : node,
+      );
+    }
+    return out;
+  }
+
+  const displayedFileNodes = $derived(
+    fileSearch.trim()
+      ? filterTree(fsRoot.children ?? [], fileSearch.trim().toLowerCase())
+      : (fsRoot.children ?? []),
+  );
 
   /** Re-lists `node`'s children in place if expanded, preserving the
    * expanded/children state of any subfolders that still exist, then
@@ -143,7 +193,7 @@
   });
 </script>
 
-<div class="sidebar">
+<div class="sidebar" class:collapsed>
   <div class="chips">
     <button class="chip" class:active={activeTab === "tools"} onclick={() => (activeTab = "tools")}>
       Tools
@@ -154,13 +204,16 @@
   </div>
 
   {#if activeTab === "tools"}
+    <div class="search-bar">
+      <input class="search-input" type="text" placeholder="Search tools…" bind:value={toolSearch} />
+    </div>
     <div class="section-body">
-      {#each categories() as [cat, catTools] (cat)}
+      {#each filteredCategories() as [cat, catTools] (cat)}
         <button class="category" onclick={() => toggleCategory(cat)}>
-          <span class="chevron" class:open={expandedCategories.has(cat)}>&#9656;</span>
+          <span class="chevron" class:open={isCategoryOpen(cat)}>&#9656;</span>
           {cat}
         </button>
-        {#if expandedCategories.has(cat)}
+        {#if isCategoryOpen(cat)}
           {#each catTools as tool (tool.name)}
             {@const badge = badgeFor(tool)}
             <button class="tool-row" onclick={() => onToolClick(tool)} title={tool.description}>
@@ -185,8 +238,11 @@
       <span class="cwd-path">{cwd}</span>
       <button class="refresh" onclick={refreshCwd} title="Refresh">&#8635;</button>
     </div>
+    <div class="search-bar">
+      <input class="search-input" type="text" placeholder="Search files…" bind:value={fileSearch} />
+    </div>
     <div class="section-body">
-      {#each fsRoot.children ?? [] as node (node.path)}
+      {#each displayedFileNodes as node (node.path)}
         <FileTreeRow {node} depth={0} {onFileClick} />
       {/each}
     </div>
@@ -202,6 +258,12 @@
     overflow-y: auto;
     font-size: 12.5px;
     padding: 6px 0;
+  }
+  .sidebar.collapsed {
+    width: 0;
+    padding: 0;
+    border-right: none;
+    overflow: hidden;
   }
   .chips {
     display: flex;
@@ -232,6 +294,25 @@
   }
   .section-body {
     padding-bottom: 8px;
+  }
+  .search-bar {
+    padding: 0 10px 6px;
+  }
+  .search-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 8px;
+    border-radius: 6px;
+  }
+  .search-input::placeholder {
+    color: var(--text-faint);
+  }
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent-dim);
   }
   .cwd-bar {
     display: flex;

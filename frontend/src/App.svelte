@@ -19,6 +19,7 @@
   let torOn = $state(false);
   let aiEnabled = $state(true);
   let aiOpen = $state(false);
+  let sidebarCollapsed = $state(false);
 
   function newTab() {
     const id = crypto.randomUUID();
@@ -86,9 +87,14 @@
 </script>
 
 <div class="shell">
-  <TitleBar />
+  <TitleBar {sidebarCollapsed} onToggleSidebar={() => (sidebarCollapsed = !sidebarCollapsed)} />
   <div class="body">
-    <Sidebar onInsertText={insertText} onOpenFile={openFile} activeTabId={activeId} />
+    <Sidebar
+      onInsertText={insertText}
+      onOpenFile={openFile}
+      activeTabId={activeId}
+      collapsed={sidebarCollapsed}
+    />
     <div class="main">
       <TabBar
         tabs={displayTabs}

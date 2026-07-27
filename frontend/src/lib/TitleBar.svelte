@@ -1,5 +1,9 @@
 <script lang="ts">
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import Icon from "./Icon.svelte";
+
+  let { sidebarCollapsed, onToggleSidebar }: { sidebarCollapsed: boolean; onToggleSidebar: () => void } =
+    $props();
 
   const win = getCurrentWindow();
 
@@ -15,9 +19,18 @@
 </script>
 
 <div class="titlebar" data-tauri-drag-region>
-  <div class="brand" data-tauri-drag-region>
-    <span class="dot"></span>
-    <span class="name">cyber-box</span>
+  <div class="brand-col" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <span class="logo"><Icon name="shield" size={15} /></span>
+      <span class="name">Cyber Box</span>
+    </div>
+    <button
+      class="collapse-btn"
+      onclick={onToggleSidebar}
+      title={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
+    >
+      <Icon name="panel-left" size={13} />
+    </button>
   </div>
   <div class="spacer" data-tauri-drag-region></div>
   <div class="controls">
@@ -37,20 +50,41 @@
     padding: 0 10px;
     flex-shrink: 0;
   }
+  .brand-col {
+    width: 260px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
   .brand {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-dim);
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 6px var(--accent);
+  .logo {
+    display: inline-flex;
+    color: var(--accent);
+  }
+  .collapse-btn {
+    width: 24px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: var(--text-faint);
+    border-radius: 6px;
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+  .collapse-btn:hover {
+    background: var(--border-soft);
+    color: var(--text);
   }
   .spacer {
     flex: 1;
